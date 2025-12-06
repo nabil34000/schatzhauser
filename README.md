@@ -2,21 +2,21 @@
 
 This is a minimal RESTful API server (backend) in Go:
 
-- the Go stdlib router, no chi,
+- import "net/http", no chi,
 
-- username and password authentication with session cookies,
+- username/passwd auth with session cookies,
 
-- request rate limiter per IP to fight evil,
+- request rate limiter per IP,
 
-- "middleware" is just Go inside a request handler, Do Repeat Yourself,
+- "middleware" is just Go inside a request handler,
 
-- a builder to store default params**,** dropped config structs and functional options: [1](https://www.reddit.com/r/golang/comments/5ky6sf/the_functional_options_pattern/), [2](https://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html), [3](https://dave.cheney.net/2014/10/17/functional-options-for-friendly-apis), [4](https://www.youtube.com/watch?v=MDy7JQN5MN4), but discarded both,
-
-- [Mat Ryer's graceful ctrl+C shutdown](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/).
+- [Mat Ryer's graceful ctrl+C](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/).
 
 ## Motivation
 
-The ideal is [PocketBase](https://pocketbase.io/docs/authentication/), but aiming for something smaller, easier to use, and more robust.
+The ideal is [PocketBase](https://pocketbase.io/docs/authentication/), aiming for something even simpler here.
+
+The PocketBase revolution:
 
 ```
 systemctl enable myapp
@@ -24,11 +24,9 @@ systemctl start myapp
 journalctl -u myapp -f
 ```
 
-myapp is just a single Go binary file which reads and updates the SQLite file data.db on the same VPS, a few commands, plain Linux. No devops yaml "application gateway ingress controllers" from hell.
+myapp is a Go binary which updates data.db on the same VPS, plain Linux. No devops yaml "application gateway ingress controllers" from hell. If you are scaling, you are on the wrong side of history.
 
-If you are into scaling, you are on the wrong side of history.
-
-Almost no 3rd party, except these:
+I use almost no 3rd party, except these:
 
 ```bash
 go mod init github.com/aabbtree77/schatzhauser
@@ -91,24 +89,16 @@ Comment out the IP rate limiters when testing anything but `ip_rate_limit`. In t
 
 The IP rate limiter is a simple-looking fixed window counter, but it is already the second version as the first one leaked memory. Tricky...
 
-Ask AI to write an industrial grade IP rate limiter, but bear in mind those codes are hard to understand and debug, so I follow KISS here.
+Ask AI to write an industrial grade IP rate limiter, but bear in mind the codes which are hard to understand will be even harder to debug, so I follow KISS here.
 
 ## Coming Soon
 
-- [ ] Rate limiter per user.
+- [ ] Maximal number of registered accounts per IP.
 
-- [ ] HTTP request body size limits.
+- [ ] Proof of work to slow down spam bots.
+
+- [ ] HTTP request body size limiter.
 
 - [ ] Session expiry.
 
 - [ ] IP bans.
-
-## Some Food for Thought
-
-- A long time Go proponent Anthony GG uses [Remix with Supabase](https://www.youtube.com/watch?v=rlJx5f5OlYA&t=791s) in his latest projects. Go is still somewhere on the server side, but not with DB and VPS all the way, and no PocketBase either.
-
-- Ultimately, the goal is to build useful no nonsense services, like eBay, [vinted.lt](https://www.vinted.lt/), [barbora.lt](https://barbora.lt/)...
-
-- Js/Ts apps slowly leak memory, see [this case by Web Dev Cody](https://youtu.be/gNDBwxeBrF4?t=176), but nobody cares.
-
-- Even Rob Pike does ["Java design patterns"](https://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html) at times, but he does have [better stuff](https://www.youtube.com/watch?v=oV9rvDllKEg&t=327s).
