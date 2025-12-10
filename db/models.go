@@ -21,7 +21,7 @@ type User struct {
 	ID           int64
 	Username     string
 	PasswordHash string
-	CreatedAt    sql.NullTime
 	Ip           string
 	Role         string
+	CreatedAt    sql.NullTime
 }

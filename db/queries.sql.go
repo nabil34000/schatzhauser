@@ -112,7 +112,7 @@ func (q *Queries) CreateUserWithIP(ctx context.Context, arg CreateUserWithIPPara
 const createUserWithRole = `-- name: CreateUserWithRole :one
 INSERT INTO users (username, password_hash, ip, role, created_at)
 VALUES (?, ?, ?, ?, datetime('now'))
-RETURNING id, username, password_hash, created_at, role
+RETURNING id, username, password_hash, ip, role, created_at
 `
 
 type CreateUserWithRoleParams struct {
@@ -122,28 +122,21 @@ type CreateUserWithRoleParams struct {
 	Role         string
 }
 
-type CreateUserWithRoleRow struct {
-	ID           int64
-	Username     string
-	PasswordHash string
-	CreatedAt    sql.NullTime
-	Role         string
-}
-
-func (q *Queries) CreateUserWithRole(ctx context.Context, arg CreateUserWithRoleParams) (CreateUserWithRoleRow, error) {
+func (q *Queries) CreateUserWithRole(ctx context.Context, arg CreateUserWithRoleParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, createUserWithRole,
 		arg.Username,
 		arg.PasswordHash,
 		arg.Ip,
 		arg.Role,
 	)
-	var i CreateUserWithRoleRow
+	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
 		&i.PasswordHash,
-		&i.CreatedAt,
+		&i.Ip,
 		&i.Role,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -158,11 +151,41 @@ func (q *Queries) DeleteSessionByToken(ctx context.Context, sessionToken string)
 }
 
 const deleteUserByUsername = `-- name: DeleteUserByUsername :exec
-DELETE FROM users WHERE username = ?
+DELETE FROM users
+WHERE username = ?
 `
 
 func (q *Queries) DeleteUserByUsername(ctx context.Context, username string) error {
 	_, err := q.db.ExecContext(ctx, deleteUserByUsername, username)
+	return err
+}
+
+const deleteUsersByPrefix = `-- name: DeleteUsersByPrefix :exec
+DELETE FROM users
+WHERE username LIKE ?
+`
+
+// supply prefix like 'test_' (we append '%' in code, but you can also pass prefix||'%')
+func (q *Queries) DeleteUsersByPrefix(ctx context.Context, username string) error {
+	_, err := q.db.ExecContext(ctx, deleteUsersByPrefix, username)
+	return err
+}
+
+const deleteUsersCreatedBetween = `-- name: DeleteUsersCreatedBetween :exec
+DELETE FROM users
+WHERE created_at >= ?1 AND created_at < ?2
+`
+
+type DeleteUsersCreatedBetweenParams struct {
+	Start sql.NullTime
+	End   sql.NullTime
+}
+
+// Delete users created_at >= start AND created_at < end
+// param start: timestamp
+// param end: timestamp
+func (q *Queries) DeleteUsersCreatedBetween(ctx context.Context, arg DeleteUsersCreatedBetweenParams) error {
+	_, err := q.db.ExecContext(ctx, deleteUsersCreatedBetween, arg.Start, arg.End)
 	return err
 }
 
@@ -238,63 +261,49 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 	return i, err
 }
 
-const getUserByUsernameWithRole = `-- name: GetUserByUsernameWithRole :one
-SELECT id, username, password_hash, created_at, role
+const getUserFullByUsername = `-- name: GetUserFullByUsername :one
+SELECT id, username, password_hash, ip, role, created_at
 FROM users
 WHERE username = ?
 LIMIT 1
 `
 
-type GetUserByUsernameWithRoleRow struct {
-	ID           int64
-	Username     string
-	PasswordHash string
-	CreatedAt    sql.NullTime
-	Role         string
-}
-
-func (q *Queries) GetUserByUsernameWithRole(ctx context.Context, username string) (GetUserByUsernameWithRoleRow, error) {
-	row := q.db.QueryRowContext(ctx, getUserByUsernameWithRole, username)
-	var i GetUserByUsernameWithRoleRow
+func (q *Queries) GetUserFullByUsername(ctx context.Context, username string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserFullByUsername, username)
+	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
 		&i.PasswordHash,
-		&i.CreatedAt,
+		&i.Ip,
 		&i.Role,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, created_at, role
+SELECT id, username, password_hash, ip, role, created_at
 FROM users
 ORDER BY created_at DESC
 `
 
-type ListUsersRow struct {
-	ID           int64
-	Username     string
-	PasswordHash string
-	CreatedAt    sql.NullTime
-	Role         string
-}
-
-func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
+func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := q.db.QueryContext(ctx, listUsers)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListUsersRow
+	var items []User
 	for rows.Next() {
-		var i ListUsersRow
+		var i User
 		if err := rows.Scan(
 			&i.ID,
 			&i.Username,
 			&i.PasswordHash,
-			&i.CreatedAt,
+			&i.Ip,
 			&i.Role,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -309,35 +318,38 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 	return items, nil
 }
 
-const updateUserRole = `-- name: UpdateUserRole :one
-UPDATE users
-SET role = ?
+const updateUserPatch = `-- name: UpdateUserPatch :one
+UPDATE users SET
+    password_hash = COALESCE(?, password_hash),
+    ip            = COALESCE(?, ip),
+    role          = COALESCE(?, role)
 WHERE username = ?
-RETURNING id, username, password_hash, created_at, role
+RETURNING id, username, password_hash, ip, role, created_at
 `
 
-type UpdateUserRoleParams struct {
-	Role     string
-	Username string
-}
-
-type UpdateUserRoleRow struct {
-	ID           int64
-	Username     string
+type UpdateUserPatchParams struct {
 	PasswordHash string
-	CreatedAt    sql.NullTime
+	Ip           string
 	Role         string
+	Username     string
 }
 
-func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) (UpdateUserRoleRow, error) {
-	row := q.db.QueryRowContext(ctx, updateUserRole, arg.Role, arg.Username)
-	var i UpdateUserRoleRow
+// Update any subset of password_hash/ip/role. Supply NULL to leave value unchanged.
+func (q *Queries) UpdateUserPatch(ctx context.Context, arg UpdateUserPatchParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserPatch,
+		arg.PasswordHash,
+		arg.Ip,
+		arg.Role,
+		arg.Username,
+	)
+	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
 		&i.PasswordHash,
-		&i.CreatedAt,
+		&i.Ip,
 		&i.Role,
+		&i.CreatedAt,
 	)
 	return i, err
 }

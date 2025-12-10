@@ -1,4 +1,3 @@
-// cmd/god/main.go
 package main
 
 import (
@@ -8,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -19,22 +19,53 @@ import (
 	"github.com/aabbtree77/schatzhauser/internal/config"
 )
 
-// usage prints small help for subcommands.
 func usage() {
-	fmt.Println(`god — administrative CLI to manage users (create, delete, promote, demote, list)
+	base := path.Base(os.Args[0])
+	fmt.Printf(`%s — administrative CLI to manage users
 
 Usage:
-  god create   --username alice --password secret [--ip 1.2.3.4] [--role admin|user]
-  god delete   --username alice
-  god promote  --username alice
-  god demote   --username alice
-  god list
+  %s user get <username>
+  %s user set --username <name> [--role admin|user] [--ip 1.2.3.4] [--password secret]
+  %s user set --username <name> --password <newpw>
+  %s user delete --username <name>
+
+  %s users list
+  %s users delete --prefix <prefix>
+  %s users delete --created-between <start> <end>    (dates: YYYY-MM-DD)
 
 Examples:
-  god create --username admin --password hunter2 --role admin
-  god promote --username alice
-  god list
-`)
+  %s user set --username alice --role admin
+  %s users delete --prefix test_
+  %s users delete --created-between 2024-01-01 2024-02-01
+`, base, base, base, base, base, base, base, base, base, base, base)
+}
+
+func fatalf(format string, a ...interface{}) {
+	fmt.Fprintf(os.Stderr, format+"\n", a...)
+	os.Exit(1)
+}
+
+/*
+func formatTime(v interface{}) string {
+	switch t := v.(type) {
+	case time.Time:
+		return t.Format(time.RFC3339)
+	case *time.Time:
+		if t == nil {
+			return ""
+		}
+		return t.Format(time.RFC3339)
+	default:
+		return fmt.Sprint(v)
+	}
+}
+*/
+
+func formatTime(t sql.NullTime) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.Format(time.RFC3339)
 }
 
 func main() {
@@ -42,9 +73,7 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
-	sub := os.Args[1]
 
-	// Load config to find DB path
 	cfg, err := config.LoadConfig("config.toml")
 	if err != nil {
 		log.Fatalf("load config: %v", err)
@@ -56,149 +85,210 @@ func main() {
 	}
 	defer db.Close()
 
-	// sanity ping
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
+	if err := db.PingContext(context.Background()); err != nil {
 		log.Fatalf("db ping: %v", err)
 	}
 
 	store := dbpkg.NewStore(db)
 
-	switch sub {
-	case "create":
-		cmd := flag.NewFlagSet("create", flag.ExitOnError)
-		username := cmd.String("username", "", "username (required)")
-		password := cmd.String("password", "", "password (required)")
-		ip := cmd.String("ip", "", "ip (optional)")
-		role := cmd.String("role", "user", "role: admin or user")
-		cmd.Parse(os.Args[2:])
-
-		if *username == "" || *password == "" {
-			cmd.Usage()
+	group := os.Args[1]
+	switch group {
+	case "user":
+		if len(os.Args) < 3 {
+			usage()
 			os.Exit(2)
 		}
-		roleVal := strings.ToLower(*role)
-		if roleVal != "admin" && roleVal != "user" {
-			log.Fatalf("invalid role: %s", *role)
+		cmd := os.Args[2]
+		switch cmd {
+		case "get":
+			if len(os.Args) != 4 {
+				fatalf("usage: user get <username>")
+			}
+			username := os.Args[3]
+			ctx := context.Background()
+			u, err := store.GetUserFullByUsername(ctx, username)
+			if err != nil {
+				log.Fatalf("get user: %v", err)
+			}
+			fmt.Printf("id: %d\nusername: %s\nrole: %s\nip: %s\ncreated_at: %s\n",
+				u.ID, u.Username, u.Role, u.Ip, formatTime(u.CreatedAt))
+
+		case "set":
+			fs := flag.NewFlagSet("user set", flag.ExitOnError)
+			username := fs.String("username", "", "username (required)")
+			role := fs.String("role", "", "role: admin|user")
+			ip := fs.String("ip", "", "ip address")
+			password := fs.String("password", "", "password (required for new user)")
+			fs.Parse(os.Args[3:])
+
+			if *username == "" {
+				fs.Usage()
+				os.Exit(2)
+			}
+
+			// validate role if provided
+			if *role != "" {
+				r := strings.ToLower(*role)
+				if r != "admin" && r != "user" {
+					fatalf("invalid role: %s", *role)
+				}
+			}
+
+			var pw string
+			if *password != "" {
+				b, err := bcrypt.GenerateFromPassword([]byte(*password), bcrypt.DefaultCost)
+				if err != nil {
+					log.Fatalf("hash password: %v", err)
+				}
+				pw = string(b)
+			}
+
+			ctx := context.Background()
+
+			// check if user exists
+			existing, err := store.GetUserFullByUsername(ctx, *username)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					// user does not exist → create
+					if pw == "" {
+						fatalf("password is required for new user")
+					}
+					createRole := "user"
+					if *role != "" {
+						createRole = strings.ToLower(*role)
+					}
+					ipVal := ""
+					if *ip != "" {
+						ipVal = *ip
+					}
+
+					newUser, err := store.CreateUserWithRole(ctx, dbpkg.CreateUserWithRoleParams{
+						Username:     *username,
+						PasswordHash: pw,
+						Ip:           ipVal,
+						Role:         createRole,
+					})
+					if err != nil {
+						log.Fatalf("create user failed: %v", err)
+					}
+					fmt.Printf("created: id=%d username=%s role=%s ip=%s created_at=%s\n",
+						newUser.ID, newUser.Username, newUser.Role, newUser.Ip, formatTime(newUser.CreatedAt))
+					return
+				} else {
+					log.Fatalf("get user failed: %v", err)
+				}
+			}
+
+			// user exists → update
+			updateRole := existing.Role
+			if *role != "" {
+				updateRole = strings.ToLower(*role)
+			}
+			updateIp := existing.Ip
+			if *ip != "" {
+				updateIp = *ip
+			}
+			updatePw := ""
+			if pw != "" {
+				updatePw = pw
+			}
+
+			res, err := store.UpdateUserPatch(ctx, dbpkg.UpdateUserPatchParams{
+				PasswordHash: updatePw,   // empty string means unchanged
+				Ip:           updateIp,   // empty string means unchanged
+				Role:         updateRole, // empty string means unchanged
+				Username:     *username,
+			})
+			if err != nil {
+				log.Fatalf("user set failed: %v", err)
+			}
+			fmt.Printf("updated: id=%d username=%s role=%s ip=%s created_at=%s\n",
+				res.ID, res.Username, res.Role, res.Ip, formatTime(res.CreatedAt))
+
+		case "delete":
+			fs := flag.NewFlagSet("user delete", flag.ExitOnError)
+			username := fs.String("username", "", "username (required)")
+			fs.Parse(os.Args[3:])
+			if *username == "" {
+				fs.Usage()
+				os.Exit(2)
+			}
+			ctx := context.Background()
+			if err := store.DeleteUserByUsername(ctx, *username); err != nil {
+				log.Fatalf("delete user: %v", err)
+			}
+			fmt.Printf("deleted %s\n", *username)
+
+		default:
+			fatalf("unknown user subcommand: %s", cmd)
 		}
 
-		// bcrypt hash
-		pwHash, err := bcrypt.GenerateFromPassword([]byte(*password), bcrypt.DefaultCost)
-		if err != nil {
-			log.Fatalf("hashing password: %v", err)
-		}
-
-		ctx := context.Background()
-		// use CreateUserWithRole (sqlc-generated) that expects: username, password_hash, ip, role
-		user, err := store.CreateUserWithRole(ctx, dbpkg.CreateUserWithRoleParams{
-			Username:     *username,
-			PasswordHash: string(pwHash),
-			Ip:           *ip,
-			Role:         roleVal,
-		})
-
-		if err != nil {
-			log.Fatalf("create user: %v", err)
-		}
-		fmt.Printf(
-			"created user: id=%d username=%s role=%s created_at=%-25v\n",
-			user.ID, user.Username, user.Role,
-			formatNullTime(user.CreatedAt),
-		)
-
-	case "delete":
-		cmd := flag.NewFlagSet("delete", flag.ExitOnError)
-		username := cmd.String("username", "", "username (required)")
-		cmd.Parse(os.Args[2:])
-		if *username == "" {
-			cmd.Usage()
+	case "users":
+		if len(os.Args) < 3 {
+			usage()
 			os.Exit(2)
 		}
-		ctx := context.Background()
-		if err := store.DeleteUserByUsername(ctx, *username); err != nil {
-			log.Fatalf("delete user: %v", err)
-		}
-		fmt.Printf("deleted user %s\n", *username)
+		cmd := os.Args[2]
+		switch cmd {
+		case "list":
+			ctx := context.Background()
+			users, err := store.ListUsers(ctx)
+			if err != nil {
+				log.Fatalf("list users: %v", err)
+			}
+			fmt.Printf("%-6s %-24s %-8s %-25s\n", "ID", "USERNAME", "ROLE", "CREATED_AT")
+			for _, u := range users {
+				fmt.Printf("%-6d %-24s %-8s %-25s\n", u.ID, u.Username, u.Role, formatTime(u.CreatedAt))
+			}
 
-	case "promote":
-		cmd := flag.NewFlagSet("promote", flag.ExitOnError)
-		username := cmd.String("username", "", "username (required)")
-		cmd.Parse(os.Args[2:])
-		if *username == "" {
-			cmd.Usage()
-			os.Exit(2)
-		}
-		ctx := context.Background()
-		u, err := store.UpdateUserRole(ctx, dbpkg.UpdateUserRoleParams{
-			Role:     "admin",
-			Username: *username,
-		})
+		case "delete":
+			fs := flag.NewFlagSet("users delete", flag.ExitOnError)
+			prefix := fs.String("prefix", "", "delete usernames starting with this prefix")
+			createdBetween := fs.Bool("created-between", false, "use created-between mode (supply two dates)")
+			fs.Parse(os.Args[3:])
 
-		if err != nil {
-			log.Fatalf("promote: %v", err)
-		}
-		fmt.Printf("promoted user: id=%d username=%s role=%s\n", u.ID, u.Username, u.Role)
+			ctx := context.Background()
+			if *prefix != "" {
+				pat := *prefix + "%"
+				if err := store.DeleteUsersByPrefix(ctx, pat); err != nil {
+					log.Fatalf("delete by prefix failed: %v", err)
+				}
+				fmt.Printf("deleted users with prefix %s\n", *prefix)
+				return
+			}
+			if *createdBetween {
+				args := fs.Args()
+				if len(args) != 2 {
+					fatalf("created-between requires two dates: start end (YYYY-MM-DD)")
+				}
+				start, err := time.Parse("2006-01-02", args[0])
+				if err != nil {
+					fatalf("bad start date: %v", err)
+				}
+				end, err := time.Parse("2006-01-02", args[1])
+				if err != nil {
+					fatalf("bad end date: %v", err)
+				}
+				params := dbpkg.DeleteUsersCreatedBetweenParams{
+					Start: sql.NullTime{Time: start, Valid: true},
+					End:   sql.NullTime{Time: end, Valid: true},
+				}
+				if err := store.DeleteUsersCreatedBetween(ctx, params); err != nil {
+					log.Fatalf("delete created-between failed: %v", err)
+				}
+				fmt.Printf("deleted users created between %s and %s\n", start.Format("2006-01-02"), end.Format("2006-01-02"))
+				return
+			}
+			fatalf("users delete: must provide either --prefix or --created-between (see help)")
 
-	case "demote":
-		cmd := flag.NewFlagSet("demote", flag.ExitOnError)
-		username := cmd.String("username", "", "username (required)")
-		cmd.Parse(os.Args[2:])
-		if *username == "" {
-			cmd.Usage()
-			os.Exit(2)
-		}
-		ctx := context.Background()
-		u, err := store.UpdateUserRole(ctx, dbpkg.UpdateUserRoleParams{
-			Role:     "user",
-			Username: *username,
-		})
-
-		if err != nil {
-			log.Fatalf("demote: %v", err)
-		}
-		fmt.Printf("demoted user: id=%d username=%s role=%s\n", u.ID, u.Username, u.Role)
-
-	case "list":
-		// no flags
-		ctx := context.Background()
-		users, err := store.ListUsers(ctx)
-		if err != nil {
-			log.Fatalf("list users: %v", err)
-		}
-		fmt.Printf("%-5s %-20s %-8s %-25s\n", "ID", "USERNAME", "ROLE", "CREATED_AT")
-		for _, u := range users {
-			fmt.Printf(
-				"%-5d %-20s %-8s %-25v\n",
-				u.ID,
-				u.Username,
-				u.Role,
-				formatNullTime(u.CreatedAt))
+		default:
+			fatalf("unknown users subcommand: %s", cmd)
 		}
 
 	case "help", "-h", "--help":
 		usage()
-
 	default:
-		fmt.Printf("unknown subcommand: %s\n\n", sub)
 		usage()
 		os.Exit(2)
 	}
-}
-
-/*
-fmt.Printf with %s on SQLITE value created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-leads to
-
-139   admin                admin    {2025-12-09 01:14:05 +0000 UTC %!s(bool=true                     )}
-
-# This helper turns it into
-
-139   admin                admin    2025-12-09T01:14:05Z
-*/
-func formatNullTime(t sql.NullTime) string {
-	if !t.Valid {
-		return ""
-	}
-	return t.Time.Format(time.RFC3339)
 }
