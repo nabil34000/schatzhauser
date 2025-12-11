@@ -16,6 +16,7 @@ type RegisterHandler struct {
 	DB                  *sql.DB
 	IPRLimiter          *protect.IPRateLimiter
 	AccountPerIPLimiter config.AccountPerIPLimiterConfig
+	RBodySizeLimiter    config.RBodySizeLimiterSection
 }
 
 type RegisterInput struct {
@@ -39,6 +40,22 @@ func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			tooManyRequests(w)
 			return
 		}
+	}
+
+	// Request Body size limiting
+	if h.RBodySizeLimiter.Enable {
+		// ---- Content-Length upfront gate
+		if r.ContentLength > h.RBodySizeLimiter.MaxRBodyBytes {
+			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		// ---- Hard read limit (authoritative)
+		if err := protect.LimitRequestBody(w, r, h.RBodySizeLimiter.MaxRBodyBytes); err != nil {
+			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		defer r.Body.Close()
 	}
 
 	var in RegisterInput

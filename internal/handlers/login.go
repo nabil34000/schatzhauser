@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/aabbtree77/schatzhauser/db"
+	"github.com/aabbtree77/schatzhauser/internal/config"
 	"github.com/aabbtree77/schatzhauser/internal/protect"
 )
 
 type LoginHandler struct {
-	DB         *sql.DB
-	IPRLimiter *protect.IPRateLimiter
+	DB               *sql.DB
+	IPRLimiter       *protect.IPRateLimiter
+	RBodySizeLimiter config.RBodySizeLimiterSection
 }
 
 type LoginInput struct {
@@ -27,6 +29,7 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ---- IP rate limiting
 	if h.IPRLimiter.Enable {
 		ip := protect.GetIP(r)
 		if ip != "" && !h.IPRLimiter.Allow(ip) {
@@ -35,11 +38,33 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Request Body size limiting
+	if h.RBodySizeLimiter.Enable {
+		// ---- Content-Length upfront gate
+		if r.ContentLength > h.RBodySizeLimiter.MaxRBodyBytes {
+			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		// ---- Hard read limit (authoritative)
+		if err := protect.LimitRequestBody(w, r, h.RBodySizeLimiter.MaxRBodyBytes); err != nil {
+			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		defer r.Body.Close()
+	}
+
+	// ---- Decode JSON
 	var in LoginInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		if protect.IsPayloadTooLarge(err) {
+			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		badRequest(w, "invalid json")
 		return
 	}
+
 	if in.Username == "" || in.Password == "" {
 		badRequest(w, "username and password required")
 		return
@@ -49,23 +74,22 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	user, err := store.GetUserByUsername(r.Context(), in.Username)
 	if err != nil {
-		// avoid leaking whether user exists
 		unauthorized(w, "invalid credentials")
 		return
 	}
 
-	// Verify password
 	if !comparePassword(user.PasswordHash, in.Password) {
 		unauthorized(w, "invalid credentials")
 		return
 	}
 
-	// Create session token
+	// ---- Create session
 	token, err := generateSessionToken()
 	if err != nil {
 		internalError(w, "token generation failed")
 		return
 	}
+
 	expires := time.Now().Add(SessionDuration)
 
 	createdSess, err := store.CreateSession(r.Context(), db.CreateSessionParams{
@@ -78,10 +102,8 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set cookie for / and HttpOnly
 	setSessionCookie(w, r, createdSess.SessionToken, createdSess.ExpiresAt)
 
-	// Return success JSON
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"message":  "logged in",

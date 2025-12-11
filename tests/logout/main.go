@@ -98,6 +98,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.AccountPerIPLimiter.Enable {
+		fmt.Println("Make sure enable is false inside config.toml [account_per_ip_limiter]")
+		os.Exit(1)
+	}
+
 	passed := 0
 	if runTestLogout() {
 		passed++

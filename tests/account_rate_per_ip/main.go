@@ -55,12 +55,17 @@ func register(username string, testIP string) (int, string) {
 func main() {
 
 	//Warning: this test adds the number of max_accounts set inside config.toml [account_per_ip_limiter]
-	//directly to data.db, and it does not delete them yet. So this is only for some dev mode.
+	//directly to data.db, and it does not delete them.
 
 	// Load configuration
 	cfg, err := config.LoadConfig("config.toml")
 	if err != nil {
 		logger.Error("failed to load config", "err", err)
+	}
+
+	if cfg.IPRateLimiter.Register.Enable {
+		fmt.Println("Make sure enable is false inside config.toml [ip_rate_limiter.register]")
+		os.Exit(1)
 	}
 
 	if !cfg.AccountPerIPLimiter.Enable {

@@ -2,9 +2,19 @@ debug = true
 
 dbpath = "./data/data.db"
 
+# Max http request body size for user registration
+[rbody_size_limiter.register]
+enable = true
+max_rbody_bytes = 4096
+
+# Max http request body size for login
+[rbody_size_limiter.login]
+enable = true
+max_rbody_bytes = 4096
+
 # Max accounts per IP
 [account_per_ip_limiter]
-enable = true
+enable = false
 max_accounts = 7
 
 # At most 5 registration attempts per minute per IP
