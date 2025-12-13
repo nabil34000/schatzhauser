@@ -294,7 +294,58 @@ curl -i -X POST \
   http://localhost:8080/api/register
 ```
 
-Why headers instead of body in PoW: "Headers keep the PoW metadata separate from the JSON body, which keeps the register payload clean, avoids mixing transport-level proof with application data, lets the server check PoW before reading or parsing the body (protecting body-size limits and parsers), and makes PoW uniformly attachable to any route without changing its JSON schema."
+Why headers instead of bodies in PoW: "Headers keep the PoW metadata separate from the JSON body, which keeps the register payload clean, avoids mixing transport-level proof with application data, lets the server check PoW before reading or parsing the body (protecting body-size limits and parsers), and makes PoW uniformly attachable to any route without changing its JSON schema."
+
+### Proof-of-Work Parameters
+
+- **Difficulty** – number of leading zero bits required in the SHA-256 hash of `challenge || nonce`.
+
+  - Controls computational cost for clients.
+  - Example values:
+    - Easy: 16 → few milliseconds per solve
+    - Moderate: 20 → ~50–100 ms per solve
+    - Hard: 24 → ~1 second per solve (CPU-dependent)
+
+- **TTL (Time-To-Live)** – lifetime of a PoW challenge in seconds.
+
+  - Clients must submit a valid nonce before this expires.
+  - Prevents reuse of old challenges.
+  - Typical values:
+    - Short: 15–30s
+    - Medium: 60s
+    - Long: 120s
+
+Recommended setups:
+
+- Easy (login, also password resets if to be implemented some day):
+
+  - difficulty = 16
+  - ttl_seconds = 20
+
+- Moderate (registration, or roughly everywhere):
+
+  - difficulty = 20
+  - ttl_seconds = 30
+
+- Hard (abuse mitigation):
+
+  - difficulty = 23
+  - ttl_seconds = 20
+
+## Default Parameter Flow
+
+To Do: the whole architecture needs some discussion, esp. protector reuse, errors.
+
+| Layer       | Responsibility                                                             |
+| ----------- | -------------------------------------------------------------------------- |
+| `config.go` | defaults + validation + fatal errors like missing secret key or db path    |
+| `routes.go` | wiring only, no logic, simply pass config values                           |
+| `protect`   | do not validate or create default values, move that to config.go if needed |
+| `handlers`  | similarly to `protect`                                                     |
+
+Default parameters are OK now, but protector isolation for greater reuse and handler simplification still needs a lot of refactoring.
+
+Reduce nils and paranoid error checking, harden more where this is needed, revisit all the exit paths, make everything more uniform/consistent.
 
 ## Tests
 
@@ -367,6 +418,8 @@ go run ./tests/pow_register
 ✅ pow_user_1765493640134_4 registered OK
 🎉 All tests passed!
 ```
+
+To Do: this is not yet automated into a single test.
 
 ## More on Go, SQLite, and sqlc
 

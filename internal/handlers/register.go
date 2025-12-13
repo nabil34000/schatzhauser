@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"log/slog"
-
 	"github.com/aabbtree77/schatzhauser/db"
 	"github.com/aabbtree77/schatzhauser/internal/config"
 	"github.com/aabbtree77/schatzhauser/internal/protect"
@@ -17,7 +15,7 @@ type RegisterHandler struct {
 	DB                  *sql.DB
 	IPRLimiter          *protect.IPRateLimiter
 	AccountPerIPLimiter config.AccountPerIPLimiterConfig
-	RBodySizeLimiter    config.RBodySizeLimiterSection
+	RBodySizeLimiter    *protect.RBodySizeLimiter
 
 	PoWCfg protect.PowConfig
 	PoWKey []byte // comes from routes.go via NewPoWHandler
@@ -37,17 +35,17 @@ type RegisterInput struct {
 }
 
 func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	slog.Info("register ip", "ip", protect.GetIP(r))
+	//slog.Info("register ip", "ip", protect.GetIP(r))
 
-	// Request-level IP rate limiter (optional)
-	if h.IPRLimiter != nil && h.IPRLimiter.Enable {
+	if h.IPRLimiter != nil {
 		ip := protect.GetIP(r)
-		if ip != "" && !h.IPRLimiter.Allow(ip) {
+		if !h.IPRLimiter.Allow(ip) {
 			tooManyRequests(w)
 			return
 		}
@@ -71,20 +69,17 @@ func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// If headers were absent, we will fall back to body PoW after size checks and decode.
 	}
 
-	// Request Body size limiting (we do this before decoding body)
-	if h.RBodySizeLimiter.Enable {
-		// ---- Content-Length upfront gate
-		if r.ContentLength > h.RBodySizeLimiter.MaxRBodyBytes {
+	//Body size limit is header-based, so this must precede json body decoding
+	if h.RBodySizeLimiter != nil {
+		if r.ContentLength > h.RBodySizeLimiter.MaxBytes {
 			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 
-		// ---- Hard read limit (authoritative)
-		if err := protect.LimitRequestBody(w, r, h.RBodySizeLimiter.MaxRBodyBytes); err != nil {
+		if err := h.RBodySizeLimiter.Apply(w, r); err != nil {
 			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		// Note: do not close r.Body here; LimitRequestBody wraps body reader appropriately.
 	}
 
 	// Now decode the registration payload

@@ -21,17 +21,34 @@ type PowConfig struct {
 }
 
 type PoWHandler struct {
-	Cfg PowConfig
-	Key []byte
+	Cfg        PowConfig
+	signingKey []byte
 }
 
 func NewPoWHandler(cfg PowConfig) http.Handler {
-	key := cfg.SecretKey
-	if len(key) == 0 {
-		key = make([]byte, 32)
-		rand.Read(key)
+	return &PoWHandler{
+		Cfg:        cfg,
+		signingKey: cfg.SecretKey,
 	}
-	return &PoWHandler{Cfg: cfg, Key: key}
+}
+
+/*
+This avoids concrete type access in routes.
+
+Instead of:
+
+	powKey := powHandler.(*protect.PoWHandler).Key
+
+Use:
+
+	powKey := powHandler.(protect.PoWKeyProvider).GetPoWSigningKey()
+*/
+type PoWKeyProvider interface {
+	GetPoWSigningKey() []byte
+}
+
+func (h *PoWHandler) GetPoWSigningKey() []byte {
+	return h.signingKey
 }
 
 type challengePayload struct {
@@ -66,7 +83,7 @@ func (h *PoWHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	expBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(expBytes, uint64(exp))
 
-	mac := hmac.New(sha256.New, h.Key)
+	mac := hmac.New(sha256.New, h.signingKey)
 	mac.Write([]byte(chStr))
 	mac.Write(expBytes)
 	hmacPart := mac.Sum(nil)
@@ -87,7 +104,8 @@ func (h *PoWHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // VerifyPoW returns nil if accepted.
 func VerifyPoW(cfg PowConfig, key []byte, challenge, nonce, token string) error {
 
-	if !cfg.Enable {
+	// PoW disabled or misconfigured → no-op
+	if !cfg.Enable || cfg.Difficulty == 0 || cfg.TTL <= 0 || len(key) == 0 {
 		return nil
 	}
 
@@ -152,7 +170,7 @@ func checkDifficulty(challenge, nonce string, difficulty uint8) bool {
 	h.Write([]byte(nonce))
 	sum := h.Sum(nil)
 
-	var bitsChecked uint8 = 0
+	var bitsChecked uint8
 	for _, b := range sum {
 		for i := uint(7); i < 8; i-- {
 			if bitsChecked == difficulty {
@@ -173,5 +191,5 @@ func checkDifficulty(challenge, nonce string, difficulty uint8) bool {
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/aabbtree77/schatzhauser/internal/config"
 	"github.com/aabbtree77/schatzhauser/internal/handlers"
@@ -12,48 +13,36 @@ import (
 // RegisterRoutes binds all HTTP routes to the stdlib mux.
 func RegisterRoutes(mux *http.ServeMux, db *sql.DB, cfg *config.Config) {
 
-	// ────────────────────────────────────────
-	// Proof of Work
-	// ────────────────────────────────────────
+	/*
+		powCfg := protect.PowConfig{
+			Enable:     cfg.ProofOfWork.Enable,
+			Difficulty: cfg.ProofOfWork.Difficulty,
+			TTL:        time.Duration(cfg.ProofOfWork.TTLSeconds) * time.Second,
+			SecretKey:  cfg.ProofOfWork.SecretKeyBytes,
+		}*/
 
-	powCfg := protect.PowConfig{
+	powHandler := protect.NewPoWHandler(protect.PowConfig{
 		Enable:     cfg.ProofOfWork.Enable,
 		Difficulty: cfg.ProofOfWork.Difficulty,
 		TTL:        cfg.ProofOfWork.TTL(),
 		SecretKey:  cfg.ProofOfWork.DecodedSecretKey,
-	}
+	})
 
-	powHandler := protect.NewPoWHandler(powCfg)
-
-	/*Some dubious dancing with interfaces not to "leak key",
-		before
-
-		powKey := powHandler.(protect.PoWKeyProvider).Key()
-
-		after: below.
-
-		ChatGPT dislikes "concrete type assertions, field access, fragile casing assumptions" here,
-	    supposedly fragile for future refactors, probably bs, but let it be.
-	*/
-	powKey := powHandler.(protect.PoWKeyProvider).GetPoWSigningKey()
+	//powHandler := protect.NewPoWHandler(powCfg)
+	powKey := powHandler.(*protect.PoWHandler).Key
 
 	mux.Handle("/api/pow/challenge", powHandler)
-
-	// ────────────────────────────────────────
-	// Register
-	// ────────────────────────────────────────
 
 	ipr := protect.NewIPRateLimiter(protect.IPRateLimiterConfig{
 		Enable:      cfg.IPRateLimiter.Register.Enable,
 		MaxRequests: cfg.IPRateLimiter.Register.MaxRequests,
-		Window:      cfg.IPRateLimiter.Register.Window(),
+		Window:      time.Duration(cfg.IPRateLimiter.Register.WindowMS) * time.Millisecond,
 	})
 
 	rbl := protect.NewRBodySizeLimiter(
 		cfg.RBodySizeLimiter.Register.Enable,
 		cfg.RBodySizeLimiter.Register.MaxRBodyBytes,
 	)
-
 	mux.Handle("/api/register", &handlers.RegisterHandler{
 		DB:                  db,
 		IPRLimiter:          ipr,
@@ -63,35 +52,26 @@ func RegisterRoutes(mux *http.ServeMux, db *sql.DB, cfg *config.Config) {
 		PoWKey:              powKey,
 	})
 
-	// ────────────────────────────────────────
-	// Login
-	// ────────────────────────────────────────
-
 	ipr = protect.NewIPRateLimiter(protect.IPRateLimiterConfig{
 		Enable:      cfg.IPRateLimiter.Login.Enable,
 		MaxRequests: cfg.IPRateLimiter.Login.MaxRequests,
-		Window:      cfg.IPRateLimiter.Login.Window(),
+		Window:      time.Duration(cfg.IPRateLimiter.Login.WindowMS) * time.Millisecond,
 	})
 
 	rbl = protect.NewRBodySizeLimiter(
 		cfg.RBodySizeLimiter.Login.Enable,
 		cfg.RBodySizeLimiter.Login.MaxRBodyBytes,
 	)
-
 	mux.Handle("/api/login", &handlers.LoginHandler{
 		DB:               db,
 		IPRLimiter:       ipr,
 		RBodySizeLimiter: rbl,
 	})
 
-	// ────────────────────────────────────────
-	// Logout
-	// ────────────────────────────────────────
-
 	ipr = protect.NewIPRateLimiter(protect.IPRateLimiterConfig{
 		Enable:      cfg.IPRateLimiter.Logout.Enable,
 		MaxRequests: cfg.IPRateLimiter.Logout.MaxRequests,
-		Window:      cfg.IPRateLimiter.Logout.Window(),
+		Window:      time.Duration(cfg.IPRateLimiter.Logout.WindowMS) * time.Millisecond,
 	})
 
 	mux.Handle("/api/logout", &handlers.LogoutHandler{
@@ -99,18 +79,15 @@ func RegisterRoutes(mux *http.ServeMux, db *sql.DB, cfg *config.Config) {
 		IPRLimiter: ipr,
 	})
 
-	// ────────────────────────────────────────
-	// Profile
-	// ────────────────────────────────────────
-
 	ipr = protect.NewIPRateLimiter(protect.IPRateLimiterConfig{
 		Enable:      cfg.IPRateLimiter.Profile.Enable,
 		MaxRequests: cfg.IPRateLimiter.Profile.MaxRequests,
-		Window:      cfg.IPRateLimiter.Profile.Window(),
+		Window:      time.Duration(cfg.IPRateLimiter.Profile.WindowMS) * time.Millisecond,
 	})
 
 	mux.Handle("/api/profile", &handlers.ProfileHandler{
 		DB:         db,
 		IPRLimiter: ipr,
 	})
+
 }

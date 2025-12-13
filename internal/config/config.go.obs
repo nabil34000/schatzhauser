@@ -7,17 +7,12 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-/*
-────────────────────────────────────────
-Request body size limiter
-────────────────────────────────────────
-*/
-
 type RBodySizeLimiterSection struct {
 	Enable        bool  `toml:"enable"`
 	MaxRBodyBytes int64 `toml:"max_rbody_bytes"`
 }
 
+// Optional: do min/max clamping?
 func DefaultRBodySizeLimiterSection() RBodySizeLimiterSection {
 	return RBodySizeLimiterSection{
 		Enable:        false,
@@ -36,12 +31,6 @@ func DefaultRBodySizeLimiterConfig() RBodySizeLimiterConfig {
 		Login:    DefaultRBodySizeLimiterSection(),
 	}
 }
-
-/*
-────────────────────────────────────────
-IP rate limiter
-────────────────────────────────────────
-*/
 
 type IPRateLimiterSection struct {
 	Enable      bool `toml:"enable"`
@@ -73,12 +62,6 @@ func DefaultIPRateLimiterConfig() IPRateLimiterConfig {
 	}
 }
 
-/*
-────────────────────────────────────────
-Account-per-IP limiter
-────────────────────────────────────────
-*/
-
 type AccountPerIPLimiterConfig struct {
 	Enable      bool `toml:"enable"`
 	MaxAccounts int  `toml:"max_accounts"`
@@ -91,20 +74,11 @@ func DefaultAccountPerIPLimiterConfig() AccountPerIPLimiterConfig {
 	}
 }
 
-/*
-────────────────────────────────────────
-Proof of Work
-────────────────────────────────────────
-*/
-
 type ProofOfWorkConfig struct {
-	Enable     bool   `toml:"enable"`
-	Difficulty uint8  `toml:"difficulty"`
-	TTLSeconds int64  `toml:"ttl_seconds"`
-	SecretKey  string `toml:"secret_key"`
-
-	// Runtime-only, filled by Validate()
-	DecodedSecretKey []byte `toml:"-"`
+	Enable     bool          `toml:"enable"`
+	Difficulty uint8         `toml:"difficulty"`
+	TTLSeconds time.Duration `toml:"ttl_seconds"`
+	SecretKey  string        `toml:"secret_key"`
 }
 
 func DefaultProofOfWorkConfig() ProofOfWorkConfig {
@@ -115,12 +89,6 @@ func DefaultProofOfWorkConfig() ProofOfWorkConfig {
 		SecretKey:  "",
 	}
 }
-
-/*
-────────────────────────────────────────
-Root config
-────────────────────────────────────────
-*/
 
 type Config struct {
 	RBodySizeLimiter    RBodySizeLimiterConfig    `toml:"rbody_size_limiter"`
@@ -137,24 +105,18 @@ func LoadConfig(path string) (Config, error) {
 		IPRateLimiter:       DefaultIPRateLimiterConfig(),
 		AccountPerIPLimiter: DefaultAccountPerIPLimiterConfig(),
 		ProofOfWork:         DefaultProofOfWorkConfig(),
+		// DBPath and Debug intentionally left to TOML/zero-value
+		// Empty DBPath should fail loudly
 	}
 
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return Config{}, err
 	}
-
 	cfg.Validate()
 	return cfg, nil
 }
 
-/*
-────────────────────────────────────────
-Validation & normalization
-────────────────────────────────────────
-*/
-
 func (c *Config) Validate() {
-	// Proof of Work
 	if c.ProofOfWork.Enable {
 		if c.ProofOfWork.SecretKey == "" {
 			panic("proof_of_work.secret_key is required when PoW is enabled")
@@ -169,25 +131,6 @@ func (c *Config) Validate() {
 			panic("proof_of_work.secret_key must be at least 16 bytes after decoding")
 		}
 
-		c.ProofOfWork.DecodedSecretKey = key
+		c.ProofOfWork.SecretKey = base64.StdEncoding.EncodeToString(key)
 	}
-
-	if c.DBPath == "" {
-		panic("dbpath must be set")
-	}
-}
-
-/*
-────────────────────────────────────────
-Helpers for consumers
-────────────────────────────────────────
-*/
-
-func (c ProofOfWorkConfig) TTL() time.Duration {
-	return time.Duration(c.TTLSeconds) * time.Second
-}
-
-// IP rate limiter helpers
-func (s IPRateLimiterSection) Window() time.Duration {
-	return time.Duration(s.WindowMS) * time.Millisecond
 }

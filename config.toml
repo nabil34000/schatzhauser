@@ -3,7 +3,7 @@ debug = true
 dbpath = "./data/data.db"
 
 [proof_of_work]
-enable = false
+enable = true
 difficulty = 22
 ttl_seconds = 90
 secret_key = "NjTRFeOWWc2x/5qUHmRWN7MzN2+58Dp+hVElh89Tr58="
@@ -28,7 +28,7 @@ max_accounts = 7
 [ip_rate_limiter.register]
 enable = false
 max_requests = 5
-window_ms = 60000
+window_ms = 20000
 
 # At most 10 login attempts per minute per IP
 [ip_rate_limiter.login]

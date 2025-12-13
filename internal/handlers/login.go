@@ -7,14 +7,13 @@ import (
 	"time"
 
 	"github.com/aabbtree77/schatzhauser/db"
-	"github.com/aabbtree77/schatzhauser/internal/config"
 	"github.com/aabbtree77/schatzhauser/internal/protect"
 )
 
 type LoginHandler struct {
 	DB               *sql.DB
 	IPRLimiter       *protect.IPRateLimiter
-	RBodySizeLimiter config.RBodySizeLimiterSection
+	RBodySizeLimiter *protect.RBodySizeLimiter
 }
 
 type LoginInput struct {
@@ -38,20 +37,17 @@ func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Request Body size limiting
-	if h.RBodySizeLimiter.Enable {
-		// ---- Content-Length upfront gate
-		if r.ContentLength > h.RBodySizeLimiter.MaxRBodyBytes {
+	//Body size limit is header-based, so this must precede json body decoding
+	if h.RBodySizeLimiter != nil {
+		if r.ContentLength > h.RBodySizeLimiter.MaxBytes {
 			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 
-		// ---- Hard read limit (authoritative)
-		if err := protect.LimitRequestBody(w, r, h.RBodySizeLimiter.MaxRBodyBytes); err != nil {
+		if err := h.RBodySizeLimiter.Apply(w, r); err != nil {
 			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		defer r.Body.Close()
 	}
 
 	// ---- Decode JSON
