@@ -5,46 +5,52 @@ import (
 	"net/http"
 
 	"github.com/aabbtree77/schatzhauser/db"
+	"github.com/aabbtree77/schatzhauser/internal/httpx"
 	"github.com/aabbtree77/schatzhauser/internal/protect"
 )
 
 type ProfileHandler struct {
-	DB         *sql.DB
-	IPRLimiter *protect.IPRateLimiter
+	DB     *sql.DB
+	Guards []protect.Guard
 }
 
 func (h *ProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if h.IPRLimiter.Enable {
-		ip := protect.GetIP(r)
-		if ip != "" && !h.IPRLimiter.Allow(ip) {
-			tooManyRequests(w)
+	// ────────────────────────────────────────
+	// Guards enforcement
+	// ────────────────────────────────────────
+	for _, g := range h.Guards {
+		if !g.Check(w, r) {
 			return
 		}
 	}
 
-	// Validate session cookie & fetch session row
-	sess, err := getSessionFromRequest(r.Context(), h.DB, r)
+	h.profile(w, r)
+}
+
+// profile contains the main business logic for fetching user info
+func (h *ProfileHandler) profile(w http.ResponseWriter, r *http.Request) {
+	// Load session from cookie
+	sess, err := GetSessionFromRequest(r.Context(), h.DB, r)
 	if err != nil {
-		unauthorized(w, "unauthorized")
+		httpx.Unauthorized(w, "unauthorized")
 		return
 	}
 
-	// Load user
+	// Load user by ID
 	store := db.NewStore(h.DB)
 	user, err := store.GetUserByID(r.Context(), sess.UserID)
 	if err != nil {
-		unauthorized(w, "unauthorized")
+		httpx.Unauthorized(w, "unauthorized")
 		return
 	}
 
 	// Return safe user info
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
 		"user": map[string]any{
 			"id":       user.ID,

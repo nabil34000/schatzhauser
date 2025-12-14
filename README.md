@@ -24,6 +24,93 @@ The following works already (some polishing will continue):
 
 Go stdlib for routing, SQLite, sqlc v2 with no SQL in the Go code.
 
+## Architecture
+
+- ./cmd - entrance points to server and god (separate user management cli program)
+
+- ./data/data.db - SQlite db, single file, should be easy to VPS and backup.
+
+- ./db - mostly sqlc generated, except store.go and migrations.go, queries via AI.
+
+- ./internal
+
+  - config/config.go - all the default params, validation, early fatal failures due to missing db path or PoW key.
+
+  - ./handlers - register, login, profile, logout.
+
+    - domain_helpers.go include db, sessions, but low level json and HTTP stuff is in httpx.
+
+  - httpx - x for extras, json and http request helpers used by handlers and protectors.
+
+  - protect - middleware: (i) request guards which are easily called by any handler in any sequence, and (ii) domain-level guards such as max account per ip limiter which is not so easy to abstract and chain, may access db, depend on business logic etc.
+
+  - server/routes.go - this is where all the parameters come from main.go and config/config.go and middleware is assembled, and then what is needed is passed to each handler.
+
+  - config.toml - all the parameters whose default values are in config/config.go via config structs duplicating the main ones (simple Go, no builders and Rob Pike's option structs).
+
+The trickiest part in all this is middleware. The initial versions of this code were very straightforward Go, but the handlers looked ugly and it was hard to reuse anything. It was also very easy to get lost with paranoid existential checks for nil and validations everywhere.
+
+These rules eliminate 80 percent of the mess:
+
+- A guard (protector's common type/interface) is never nil, disabled means inactive, not absent.
+
+- Defaults + validation + fatal errors live in config, no paranoid checks elsewhere.
+
+- Handlers never decide whether a protector is enabled, they only run a fully formed guard or a sequence of them, defined and instantiated for a specific handler inside ./internal/server/routes.go.
+
+- A guard checks if everything is alright and returns true, or writes an HTTP response and returns false. There is no nil, error handling, panic() and other crapola.
+
+- PoW is headers-only, no fallbacks to json body.
+
+## More about Middleware (Guards)
+
+This is the code which runs inside a handler before business logic, but sometimes also gets entangled with it.
+
+Those that run before are in-memory guards. Those which are messier may access db and are excluded into "DIY and put inside a handler".
+
+Most of the guards are **stateless, synchronous, and in-memory request gates**. To chain/execute them in sequence we need to put then under a common type which is done by forcing them to implement the `protect.Guard` interface:
+
+```go
+type Guard interface {
+    Check(w http.ResponseWriter, r *http.Request) bool
+}
+```
+
+This lives inside ./internal/protect to break a cycle between ./internal/server/routes.go and ./internal/handlers/.
+
+The rest is just Go code. Inside a handler an active guard will emit an HTTP response and exit earlier via return
+
+```
+for _, g := range h.Guards {
+    if !g.Check(w, r) {
+        return
+    }
+}
+```
+
+See ./internal/handlers/register.go as an example.
+
+You will find the following tested guards inside ./internal/protect:
+
+- ip_rate_guard.go – HTTP request rate per ip limiting.
+
+- body_size_guard.go – request body size cap.
+
+- pow_guard.go – optional Proof-of-Work challenge.
+
+./internal/handlers/register.go also includes a maximal accounts per ip limiter,
+
+```go
+limiter := protect.NewAccountPerIPLimiter(
+		h.AccountPerIPLimiter,
+		txStore.CountUsersByIP,
+	)
+```
+
+which needs to access db via txStore, which in turn requires further context. This is the guard of the second type mentioned above. It is excluded from middleware in order to avoid unnecessary abstractions. We are going to use the check for the accounts limit per ip only inside the register route (handle) anyway.
+
+This way we cover (more or less) complex Ruby Rack machinery with basic typed Go code. Bear in mind that not everything that can be composed needs to be composed. Abstractions/magic bring hidden cost. YAGNI.
+
 ## Setup/Workflow
 
 Clone, cd, and run `make all` which should create two binaries inside ./bin: server and god.
@@ -136,14 +223,6 @@ SQLite supports multiple processes safely (file locking handles it), with one ca
 # bulk delete by creation date
 ./bin/god users delete --created-between 2025-12-02 2025-12-05
 ```
-
-## "Middleware"
-
-This is hardening (protection) against bots. It is just Go code inside handlers activating depending on "enable" flags inside config.toml, see also ./tests.
-
-I do not use any fancy composition, just plain Go: ./internal/protect/ip_rate_limiter.go is separated away as it is reused by other routes, similarly with ./internal/protect/req_body_size_limiter.go. KISS.
-
-The maximal number of registered accounts per ip is implemented inside ./internal/handlers/register.go. It is not going to be used anywhere else, so there is no need to abstract it. YAGNI.
 
 ## Proof of Work (PoW)
 
@@ -331,21 +410,6 @@ Recommended setups:
 
   - difficulty = 23
   - ttl_seconds = 20
-
-## Default Parameter Flow
-
-To Do: the whole architecture needs some discussion, esp. protector reuse, errors.
-
-| Layer       | Responsibility                                                             |
-| ----------- | -------------------------------------------------------------------------- |
-| `config.go` | defaults + validation + fatal errors like missing secret key or db path    |
-| `routes.go` | wiring only, no logic, simply pass config values                           |
-| `protect`   | do not validate or create default values, move that to config.go if needed |
-| `handlers`  | similarly to `protect`                                                     |
-
-Default parameters are OK now, but protector isolation for greater reuse and handler simplification still needs a lot of refactoring.
-
-Reduce nils and paranoid error checking, harden more where this is needed, revisit all the exit paths, make everything more uniform/consistent.
 
 ## Tests
 

@@ -21,34 +21,15 @@ type PowConfig struct {
 }
 
 type PoWHandler struct {
-	Cfg        PowConfig
-	signingKey []byte
+	Cfg PowConfig
+	Key []byte
 }
 
-func NewPoWHandler(cfg PowConfig) http.Handler {
+func NewPoWHandler(cfg PowConfig) *PoWHandler {
 	return &PoWHandler{
-		Cfg:        cfg,
-		signingKey: cfg.SecretKey,
+		Cfg: cfg,
+		Key: cfg.SecretKey,
 	}
-}
-
-/*
-This avoids concrete type access in routes.
-
-Instead of:
-
-	powKey := powHandler.(*protect.PoWHandler).Key
-
-Use:
-
-	powKey := powHandler.(protect.PoWKeyProvider).GetPoWSigningKey()
-*/
-type PoWKeyProvider interface {
-	GetPoWSigningKey() []byte
-}
-
-func (h *PoWHandler) GetPoWSigningKey() []byte {
-	return h.signingKey
 }
 
 type challengePayload struct {
@@ -83,7 +64,7 @@ func (h *PoWHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	expBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(expBytes, uint64(exp))
 
-	mac := hmac.New(sha256.New, h.signingKey)
+	mac := hmac.New(sha256.New, h.Key)
 	mac.Write([]byte(chStr))
 	mac.Write(expBytes)
 	hmacPart := mac.Sum(nil)

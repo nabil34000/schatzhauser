@@ -5,34 +5,39 @@ import (
 	"net/http"
 
 	"github.com/aabbtree77/schatzhauser/db"
+	"github.com/aabbtree77/schatzhauser/internal/httpx"
 	"github.com/aabbtree77/schatzhauser/internal/protect"
 )
 
 type LogoutHandler struct {
-	DB         *sql.DB
-	IPRLimiter *protect.IPRateLimiter
+	DB     *sql.DB
+	Guards []protect.Guard
 }
 
 func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if h.IPRLimiter.Enable {
-		ip := protect.GetIP(r)
-		if ip != "" && !h.IPRLimiter.Allow(ip) {
-			tooManyRequests(w)
+	// ────────────────────────────────────────
+	// Guards enforcement
+	// ────────────────────────────────────────
+	for _, g := range h.Guards {
+		if !g.Check(w, r) {
 			return
 		}
 	}
 
-	// Attempt to get cookie
+	h.logout(w, r)
+}
+
+// logout performs the actual session deletion and cookie clearing
+func (h *LogoutHandler) logout(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(SessionCookieName)
 	if err != nil {
-		// No cookie — nothing to do. Return success (idempotent).
-		writeJSON(w, http.StatusOK, map[string]any{
+		// No cookie — idempotent success
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
 			"status":  "ok",
 			"message": "no session",
 		})
@@ -42,13 +47,13 @@ func (h *LogoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	token := c.Value
 	store := db.NewStore(h.DB)
 
-	// Delete session from DB (best-effort)
+	// Best-effort delete from DB
 	_ = store.DeleteSessionByToken(r.Context(), token)
 
-	// Clear cookie on client
-	clearSessionCookie(w, r)
+	// Clear cookie
+	ClearSessionCookie(w, r)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
 		"message": "logged out",
 	})

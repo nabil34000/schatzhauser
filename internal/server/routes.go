@@ -13,7 +13,7 @@ import (
 func RegisterRoutes(mux *http.ServeMux, db *sql.DB, cfg *config.Config) {
 
 	// ────────────────────────────────────────
-	// Proof of Work
+	// Proof of Work (shared)
 	// ────────────────────────────────────────
 
 	powCfg := protect.PowConfig{
@@ -24,93 +24,96 @@ func RegisterRoutes(mux *http.ServeMux, db *sql.DB, cfg *config.Config) {
 	}
 
 	powHandler := protect.NewPoWHandler(powCfg)
-
-	/*Some dubious dancing with interfaces not to "leak key",
-		before
-
-		powKey := powHandler.(protect.PoWKeyProvider).Key()
-
-		after: below.
-
-		ChatGPT dislikes "concrete type assertions, field access, fragile casing assumptions" here,
-	    supposedly fragile for future refactors, probably bs, but let it be.
-	*/
-	powKey := powHandler.(protect.PoWKeyProvider).GetPoWSigningKey()
-
 	mux.Handle("/api/pow/challenge", powHandler)
 
 	// ────────────────────────────────────────
 	// Register
 	// ────────────────────────────────────────
 
-	ipr := protect.NewIPRateLimiter(protect.IPRateLimiterConfig{
+	registerIPR := protect.NewIPRateGuard(protect.IPRateLimiterConfig{
 		Enable:      cfg.IPRateLimiter.Register.Enable,
 		MaxRequests: cfg.IPRateLimiter.Register.MaxRequests,
 		Window:      cfg.IPRateLimiter.Register.Window(),
 	})
 
-	rbl := protect.NewRBodySizeLimiter(
+	registerBody := protect.NewBodySizeGuard(
 		cfg.RBodySizeLimiter.Register.Enable,
 		cfg.RBodySizeLimiter.Register.MaxRBodyBytes,
 	)
 
+	registerGuards := []protect.Guard{
+		registerIPR,
+		registerBody,
+		protect.NewPoWGuard(powCfg, powHandler.Key),
+	}
+
 	mux.Handle("/api/register", &handlers.RegisterHandler{
-		DB:                  db,
-		IPRLimiter:          ipr,
+		DB:     db,
+		Guards: registerGuards,
+		// AccountPerIPLimiter can remain here if needed later
 		AccountPerIPLimiter: cfg.AccountPerIPLimiter,
-		RBodySizeLimiter:    rbl,
-		PoWCfg:              powCfg,
-		PoWKey:              powKey,
 	})
 
 	// ────────────────────────────────────────
 	// Login
 	// ────────────────────────────────────────
 
-	ipr = protect.NewIPRateLimiter(protect.IPRateLimiterConfig{
+	loginIPR := protect.NewIPRateGuard(protect.IPRateLimiterConfig{
 		Enable:      cfg.IPRateLimiter.Login.Enable,
 		MaxRequests: cfg.IPRateLimiter.Login.MaxRequests,
 		Window:      cfg.IPRateLimiter.Login.Window(),
 	})
 
-	rbl = protect.NewRBodySizeLimiter(
+	loginBody := protect.NewBodySizeGuard(
 		cfg.RBodySizeLimiter.Login.Enable,
 		cfg.RBodySizeLimiter.Login.MaxRBodyBytes,
 	)
 
+	loginGuards := []protect.Guard{
+		loginIPR,
+		loginBody,
+	}
+
 	mux.Handle("/api/login", &handlers.LoginHandler{
-		DB:               db,
-		IPRLimiter:       ipr,
-		RBodySizeLimiter: rbl,
+		DB:     db,
+		Guards: loginGuards,
 	})
 
 	// ────────────────────────────────────────
 	// Logout
 	// ────────────────────────────────────────
 
-	ipr = protect.NewIPRateLimiter(protect.IPRateLimiterConfig{
+	logoutIPR := protect.NewIPRateGuard(protect.IPRateLimiterConfig{
 		Enable:      cfg.IPRateLimiter.Logout.Enable,
 		MaxRequests: cfg.IPRateLimiter.Logout.MaxRequests,
 		Window:      cfg.IPRateLimiter.Logout.Window(),
 	})
 
+	logoutGuards := []protect.Guard{
+		logoutIPR,
+	}
+
 	mux.Handle("/api/logout", &handlers.LogoutHandler{
-		DB:         db,
-		IPRLimiter: ipr,
+		DB:     db,
+		Guards: logoutGuards,
 	})
 
 	// ────────────────────────────────────────
 	// Profile
 	// ────────────────────────────────────────
 
-	ipr = protect.NewIPRateLimiter(protect.IPRateLimiterConfig{
+	profileIPR := protect.NewIPRateGuard(protect.IPRateLimiterConfig{
 		Enable:      cfg.IPRateLimiter.Profile.Enable,
 		MaxRequests: cfg.IPRateLimiter.Profile.MaxRequests,
 		Window:      cfg.IPRateLimiter.Profile.Window(),
 	})
 
+	profileGuards := []protect.Guard{
+		profileIPR,
+	}
+
 	mux.Handle("/api/profile", &handlers.ProfileHandler{
-		DB:         db,
-		IPRLimiter: ipr,
+		DB:     db,
+		Guards: profileGuards,
 	})
 }

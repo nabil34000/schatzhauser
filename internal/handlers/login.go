@@ -4,16 +4,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aabbtree77/schatzhauser/db"
+	"github.com/aabbtree77/schatzhauser/internal/httpx"
 	"github.com/aabbtree77/schatzhauser/internal/protect"
 )
 
 type LoginHandler struct {
-	DB               *sql.DB
-	IPRLimiter       *protect.IPRateLimiter
-	RBodySizeLimiter *protect.RBodySizeLimiter
+	DB     *sql.DB
+	Guards []protect.Guard
 }
 
 type LoginInput struct {
@@ -21,86 +22,77 @@ type LoginInput struct {
 	Password string `json:"password"`
 }
 
+// ServeHTTP handles the HTTP request, applies guards, decodes JSON, and delegates to login().
 func (h *LoginHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// ---- IP rate limiting
-	if h.IPRLimiter.Enable {
-		ip := protect.GetIP(r)
-		if ip != "" && !h.IPRLimiter.Allow(ip) {
-			tooManyRequests(w)
+	for _, g := range h.Guards {
+		if !g.Check(w, r) {
 			return
 		}
 	}
 
-	//Body size limit is header-based, so this must precede json body decoding
-	if h.RBodySizeLimiter != nil {
-		if r.ContentLength > h.RBodySizeLimiter.MaxBytes {
-			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-
-		if err := h.RBodySizeLimiter.Apply(w, r); err != nil {
-			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-	}
-
-	// ---- Decode JSON
 	var in LoginInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		if protect.IsPayloadTooLarge(err) {
-			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-		badRequest(w, "invalid json")
+		httpx.BadRequest(w, "invalid json")
 		return
 	}
 
+	in.Username = strings.TrimSpace(in.Username)
 	if in.Username == "" || in.Password == "" {
-		badRequest(w, "username and password required")
+		httpx.BadRequest(w, "username and password required")
 		return
 	}
 
+	h.login(w, r, in)
+}
+
+// login contains the actual business logic of authentication and session creation.
+func (h *LoginHandler) login(w http.ResponseWriter, r *http.Request, in LoginInput) {
 	store := db.NewStore(h.DB)
 
+	// Fetch user by username
 	user, err := store.GetUserByUsername(r.Context(), in.Username)
 	if err != nil {
-		unauthorized(w, "invalid credentials")
+		httpx.Unauthorized(w, "invalid credentials")
 		return
 	}
 
-	if !comparePassword(user.PasswordHash, in.Password) {
-		unauthorized(w, "invalid credentials")
+	// Verify password
+	if !ComparePassword(user.PasswordHash, in.Password) {
+		httpx.Unauthorized(w, "invalid credentials")
 		return
 	}
 
-	// ---- Create session
-	token, err := generateSessionToken()
+	// Generate session token
+	token, err := GenerateSessionToken()
 	if err != nil {
-		internalError(w, "token generation failed")
+		httpx.InternalError(w, "token generation failed")
 		return
 	}
 
+	// Set expiry
 	expires := time.Now().Add(SessionDuration)
 
-	createdSess, err := store.CreateSession(r.Context(), db.CreateSessionParams{
+	// Create session in DB
+	session, err := store.CreateSession(r.Context(), db.CreateSessionParams{
 		UserID:       user.ID,
 		SessionToken: token,
 		ExpiresAt:    expires,
 	})
 	if err != nil {
-		internalError(w, "cannot create session")
+		httpx.InternalError(w, "cannot create session")
 		return
 	}
 
-	setSessionCookie(w, r, createdSess.SessionToken, createdSess.ExpiresAt)
+	// Set session cookie
+	SetSessionCookie(w, r, session.SessionToken, session.ExpiresAt)
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	// Return success
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"message":  "logged in",
 		"username": user.Username,
