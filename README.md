@@ -26,29 +26,31 @@ Go stdlib for routing, SQLite, sqlc v2 with no SQL in the Go code.
 
 ## Architecture
 
-- ./cmd - entrance points to server and god (separate user management cli program)
+- ./cmd - entrance points to server and god (independent user management cli).
 
-- ./data/data.db - SQlite db, single file, should be easy to VPS and backup.
+- ./data/data.db - SQlite db, single file, should be easier to vps and backup.
 
-- ./db - mostly sqlc generated, except store.go and migrations.go, queries via AI.
+- ./db - mostly sqlc generated, except store.go and migrations.go, ask AI.
 
 - ./internal
 
-  - config/config.go - all the default params, validation, early fatal failures due to missing db path or PoW key.
+  - config/config.go - default params, validation, fatal failures.
 
-  - ./handlers - register, login, profile, logout.
+  - ./handlers
 
-    - domain_helpers.go include db, sessions, but low level json and HTTP stuff is in httpx.
+    - register, login, profile, logout.
 
-  - httpx - x for extras, json and http request helpers used by handlers and protectors.
+    - domain_helpers.go related to db, sessions, not json/http stuff.
 
-  - protect - middleware: (i) request guards which are easily called by any handler in any sequence, and (ii) domain-level guards such as max account per ip limiter which is not so easy to abstract and chain, may access db, depend on business logic etc.
+  - httpx - x for extras, json/http helpers used by both: handlers and guards.
 
-  - server/routes.go - this is where all the parameters come from main.go and config/config.go and middleware is assembled, and then what is needed is passed to each handler.
+  - protect - middleware: (i) guards which are easily called by any handler in any sequence, and (ii) domain-level guards such as max account per ip limiter which is not so easy to abstract and chain due to db and context.
 
-  - config.toml - all the parameters whose default values are in config/config.go via config structs duplicating the main ones (simple Go, no builders and Rob Pike's option structs).
+  - server/routes.go - this is where all the parameters come from main.go and config/config.go and middleware is assembled, and then passed to each handler.
 
-The trickiest part in all this is middleware. The initial versions of this code were very straightforward Go, but the handlers looked ugly and it was hard to reuse anything. It was also very easy to get lost with paranoid existential checks for nil and validations everywhere.
+  - config.toml - all the parameters whose default values are in config/config.go via config structs duplicating the main ones (simple Go, no builders, no Rob Pike's option structs).
+
+The trickiest part is middleware. The initial versions of this code were very direct Go (no interfaces), but the handlers began to get ugly and it was hard to reuse anything. It was also very easy to get lost with paranoid existential checks for nil and validations everywhere.
 
 These rules eliminate 80 percent of the mess:
 
@@ -56,11 +58,11 @@ These rules eliminate 80 percent of the mess:
 
 - Defaults + validation + fatal errors live in config, no paranoid checks elsewhere.
 
-- Handlers never decide whether a protector is enabled, they only run a fully formed guard or a sequence of them, defined and instantiated for a specific handler inside ./internal/server/routes.go.
+- Handlers never mess with a guard, they only run a fully formed guard or a sequence of them, defined and instantiated for a specific handler inside ./internal/server/routes.go.
 
-- A guard checks if everything is alright and returns true, or writes an HTTP response and returns false. There is no nil, error handling, panic() and other crapola.
+- A guard checks if everything is alright and returns true, or writes an HTTP response and returns false. There is no nil, error handling, panic, and exit maze.
 
-- PoW is headers-only, no fallbacks to json body.
+- PoW is headers-only early return, no fallbacks to json body, no need to read it.
 
 ## More about Middleware (Guards)
 
@@ -68,7 +70,7 @@ This is the code which runs inside a handler before business logic, but sometime
 
 Those that run before are in-memory guards. Those which are messier may access db and are excluded into "DIY and put inside a handler".
 
-Most of the guards are **stateless, synchronous, and in-memory request gates**. To chain/execute them in sequence we need to put then under a common type which is done by forcing them to implement the `protect.Guard` interface:
+Most of the guards are **stateless, synchronous, and in-memory request gates**. To chain/execute them in sequence we need to put them under a common type which is done by forcing them to implement `protect.Guard`:
 
 ```go
 type Guard interface {
@@ -76,9 +78,9 @@ type Guard interface {
 }
 ```
 
-This lives inside ./internal/protect to break a cycle between ./internal/server/routes.go and ./internal/handlers/.
+This lives inside ./internal/protect to break a cycle between ./internal/server/routes.go and ./internal/handlers.
 
-The rest is just Go code. Inside a handler an active guard will emit an HTTP response and exit earlier via return
+The rest is just Go code. Inside a handler an active guard will emit an HTTP response and return false. The handler exits before business logic via return:
 
 ```
 for _, g := range h.Guards {
@@ -107,9 +109,9 @@ limiter := protect.NewAccountPerIPLimiter(
 	)
 ```
 
-which needs to access db via txStore, which in turn requires further context. This is the guard of the second type mentioned above. It is excluded from middleware in order to avoid unnecessary abstractions. We are going to use the check for the accounts limit per ip only inside the register route (handle) anyway.
+It needs to access db via txStore, which in turn requires further context. This is the guard of the second type mentioned above. It is excluded from middleware in order to avoid unnecessary abstractions. We are going to use the check for the accounts limit per ip only inside the register route (handle) anyway.
 
-This way we cover (more or less) complex Ruby Rack machinery with basic typed Go code. Bear in mind that not everything that can be composed needs to be composed. Abstractions/magic bring hidden cost. YAGNI.
+This way we cover (more or less) complex Ruby Rack machinery with basic typed Go code. And we will be ready for debugging when the shit hits the fan. Bear in mind that not everything that can be composed needs to be composed. Abstractions/magic bring hidden cost. YAGNI.
 
 ## Setup/Workflow
 
@@ -226,7 +228,9 @@ SQLite supports multiple processes safely (file locking handles it), with one ca
 
 ## Proof of Work (PoW)
 
-This is quite a complication, but it allows to put a secure computational burden on the client side. For a human wasting 1s of the CPU when registering an account is not much. For a bot bombarding the API with millions of requests the computational resources will skyrocket.
+TD: This needs to be moved into a separate .md file perhaps.
+
+PoW is quite a complication, but it allows to put a secure computational burden on the client side. For a human wasting 1s of the CPU when registering an account is not much. For a bot bombarding the API with millions of requests the computational resources will skyrocket.
 
 This lightweight client-side PoW system protects the /api/register endpoint from automated mass-account creation. When enabled, the server issues a short-lived challenge. The client must find a nonce whose SHA-256 hash meets a difficulty requirement (leading zero bits). Successful solutions permit registration.
 
@@ -483,7 +487,7 @@ go run ./tests/pow_register
 🎉 All tests passed!
 ```
 
-To Do: this is not yet automated into a single test.
+TD: this is not yet automated into a single test.
 
 ## More on Go, SQLite, and sqlc
 
