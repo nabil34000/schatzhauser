@@ -1,6 +1,10 @@
 ## schatzhauser
 
-This is a Go backend to build protected CRUD apps. No admin GUI/TUIs (they do not scale), no emails, no 3rd party auth providers. KISS, DIY, YAGNI.
+This is a Go backend (BaaS) to build protected web apps. "S" is for self-hosting on a VPS.
+
+KISS, DIY, YAGNI. Absolutely no adapters, builders, composition games, black boxes, DI, and paid services. The aim is also to minimize nil existentialism and paranoid error checking.
+
+Slow down and enjoy debuggable code.
 
 The following works already (some polishing will continue):
 
@@ -8,17 +12,19 @@ The following works already (some polishing will continue):
 
 - [x] username/passwd authentication with session cookies,
 
-- [x] maximal request rate per IP (fixed window, in memory),
+- [x] simple cli (`god`) to manage users, no gui/tui bs,
 
-- [x] maximal account number per IP (persistent in SQLite),
+- [x] optional route hardening to fight bots:
 
-- [x] maximal request body size (register, login),
+  - [x] maximal request rate per IP (fixed window, in memory),
 
-- [x] proof of work,
+  - [x] maximal account number per IP (persistent in SQLite),
 
-- [x] god mode to create, update, list, delete users and change roles,
+  - [x] maximal request body size (register, login),
 
-- [x] tests are independent Go programs, no import "testing",
+  - [x] proof of work if you want it extremely bot-unfriendly,
+
+- [x] tests are Go programs serving as real examples showing exactly how a feature works, no import "testing" bs,
 
 - [ ] VPS deployment.
 
@@ -139,7 +145,7 @@ SQLite supports multiple processes safely (file locking handles it), with one ca
 
 ## Proof of Work (PoW)
 
-PoW is quite a complication, but it allows to impose a secure computational burden on the client side. For a human wasting 1s of the CPU when registering an account is not much. For a bot bombarding the API with millions of requests the computational resources will skyrocket. See [Proof of Work](docs/proof_of_work.md) for details.
+PoW is quite a complication, but it allows to impose secure computational burden on the client side. For a human wasting 1s of the client CPU when registering an account is not much. For a bot bombarding the API with millions of requests the computational resources will skyrocket. See [Proof of Work](docs/proof_of_work.md) for details.
 
 ## Tests
 
@@ -158,14 +164,22 @@ go run ./tests/req_body_size
 go run ./tests/pow_register
 ```
 
-TD: completely automate this into a single command by isolating server instances with different ./config.toml parameters?
+TD: clean up and automate this into a single command by isolating server instances loading different ./config.toml parameters?
 
-## More on Go, SQLite, and sqlc
+## Some Comments on Relevant Works
 
 [How We Went All In on sqlc/pgx for Postgres + Go (2021) on HN](https://news.ycombinator.com/item?id=28462162)
 
-[Pocketbase – open-source realtime back end in 1 file on HN](https://news.ycombinator.com/item?id=46075320)
+sqlc is also the way used here. Give AI migration files \*.sql, store.go, queries.sql, and it will teach you to fly. "Make me GDPR, HIPAA, or PCI-DSS compliant".
 
 [PocketBase: FLOSS/fund sponsorship and UI rewrite #7287](https://github.com/pocketbase/pocketbase/discussions/7287)
 
-[Mat Ryer: How I write HTTP services in Go after 13 years (2024)](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/)
+Pocketbase is a truly inspiring project, but it does a bit too much to be like the big boys rather than [DOTADIW](https://dotadiw.com/).
+
+[Mat Ryer: How I write HTTP services in Go after 13 years (2024) on HN](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/)
+
+I do not believe in any design (clean code) patterns out there, but there are two concepts to note: (i) graceful shutdown with signal.NotifyContext, and (ii) reducing application startup time with sync.Once. The first one is in ./cmd/server/main.go.
+
+[Rob Pike: Self-referential functions and the design of options (2014)](https://commandcenter.blogspot.com/2014/01/self-referential-functions-and-design.html)
+
+Do "builder design pattern" instead if you must, at least it is standard. Better forget any of this and write plain Go, see ./internal/config/config.go.

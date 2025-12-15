@@ -1,6 +1,6 @@
 ## Proof of Work
 
-### Overview
+### 0. Overview
 
 The PoW system protects /api/register from automated mass-account creation. When enabled, the server issues a short-lived challenge. The client must find a nonce whose SHA-256 hash meets a difficulty requirement (leading zero bits). Successful solutions permit registration.
 
@@ -149,7 +149,7 @@ curl -i -X POST \
 
 Why headers instead of bodies in PoW: "Headers keep the PoW metadata separate from the JSON body, which keeps the register payload clean, avoids mixing transport-level proof with application data, lets the server check PoW before reading or parsing the body (protecting body-size limits and parsers), and makes PoW uniformly attachable to any route without changing its JSON schema."
 
-### Proof-of-Work Parameters
+### 5. Proof-of-Work Parameters
 
 - **Difficulty** – number of leading zero bits required in the SHA-256 hash of `challenge || nonce`.
 
