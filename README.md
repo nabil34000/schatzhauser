@@ -1,18 +1,16 @@
 ## schatzhauser
 
-This is a Go backend (BaaS) to build protected web apps. "S" is for self-hosting on a VPS.
+This is a Go backend (BaaS) to build protected web apps. "S" for self-hosting on a VPS.
 
-KISS, DIY, YAGNI. Absolutely no adapters, builders, composition games, black boxes, DI, and paid services. The aim is also to minimize nil existentialism and paranoid error checking.
-
-Slow down and enjoy debuggable code.
+KISS, DIY, YAGNI, [DOTADIW](https://dotadiw.com/). Slow down and enjoy Go.
 
 The following works already (some polishing will continue):
 
 - [x] register, login/out, profile handlers (routes),
 
-- [x] username/passwd authentication with session cookies,
+- [x] username/passwd auth with session cookies,
 
-- [x] simple cli (`god`) to manage users, no gui/tui bs,
+- [x] cli to manage users, no guis/tuis,
 
 - [x] optional route hardening to fight bots:
 
@@ -24,7 +22,7 @@ The following works already (some polishing will continue):
 
   - [x] proof of work if you want it extremely bot-unfriendly,
 
-- [x] tests are Go programs serving as real examples showing exactly how a feature works, no import "testing" bs,
+- [x] tests are Go programs as real examples, no import "testing",
 
 - [ ] VPS deployment.
 
@@ -174,7 +172,7 @@ sqlc is also the way used here. Give AI migration files \*.sql, store.go, querie
 
 [PocketBase: FLOSS/fund sponsorship and UI rewrite #7287](https://github.com/pocketbase/pocketbase/discussions/7287)
 
-Pocketbase is a truly inspiring project, but it does a bit too much to be like the big boys rather than [DOTADIW](https://dotadiw.com/).
+PocketBase is a truly inspiring project, but it does a bit too much to be like the big boys rather than [DOTADIW](https://dotadiw.com/).
 
 [Mat Ryer: How I write HTTP services in Go after 13 years (2024) on HN](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/)
 
