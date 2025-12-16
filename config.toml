@@ -3,7 +3,7 @@ debug = true
 dbpath = "./data/data.db"
 
 [proof_of_work]
-enable = false
+enable = true
 difficulty = 22
 ttl_seconds = 90
 secret_key = "NjTRFeOWWc2x/5qUHmRWN7MzN2+58Dp+hVElh89Tr58="
@@ -21,7 +21,7 @@ max_rbody_bytes = 4096
 
 # Max accounts per IP
 [account_per_ip_limiter]
-enable = true
+enable = false
 max_accounts = 7
 
 # At most 5 registration attempts per minute per IP

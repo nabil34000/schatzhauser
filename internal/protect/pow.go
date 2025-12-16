@@ -6,12 +6,19 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/aabbtree77/schatzhauser/internal/httpx"
 )
+
+/*
+────────────────────────────────────────────────────────────
+Config
+────────────────────────────────────────────────────────────
+*/
 
 type PowConfig struct {
 	Enable     bool
@@ -19,6 +26,12 @@ type PowConfig struct {
 	TTL        time.Duration
 	SecretKey  []byte
 }
+
+/*
+────────────────────────────────────────────────────────────
+Challenge handler
+────────────────────────────────────────────────────────────
+*/
 
 type PoWHandler struct {
 	Cfg PowConfig
@@ -40,27 +53,24 @@ type challengePayload struct {
 }
 
 func (h *PoWHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	if !h.Cfg.Enable {
-		// PoW disabled → return HTTP 204 No Content
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	// === Challenge creation ===
+	// generate challenge
 	ch := make([]byte, 16)
-	rand.Read(ch)
+	_, _ = rand.Read(ch)
 	chStr := base64.RawStdEncoding.EncodeToString(ch)
 
 	now := time.Now().Unix()
 	exp := now + int64(h.Cfg.TTL.Seconds())
 
-	// Compute HMAC(secret, challenge || expBytes)
 	expBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(expBytes, uint64(exp))
 
@@ -79,13 +89,64 @@ func (h *PoWHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		TTLSecs:    exp - now,
 		Token:      token,
 	}
-	writeJSON(w, http.StatusOK, resp)
+
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
+
+/*
+────────────────────────────────────────────────────────────
+Guard
+────────────────────────────────────────────────────────────
+*/
+
+type PoWGuard struct {
+	Cfg PowConfig
+	Key []byte
+}
+
+func NewPoWGuard(cfg PowConfig) *PoWGuard {
+	return &PoWGuard{
+		Cfg: cfg,
+		Key: cfg.SecretKey,
+	}
+}
+
+func (g *PoWGuard) Check(w http.ResponseWriter, r *http.Request) bool {
+	if !g.Cfg.Enable {
+		return true
+	}
+
+	challenge := r.Header.Get("X-PoW-Challenge")
+	nonce := r.Header.Get("X-PoW-Nonce")
+	token := r.Header.Get("X-PoW-Token")
+
+	if challenge == "" || nonce == "" || token == "" {
+		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]any{
+			"status":  "error",
+			"message": "proof of work required",
+		})
+		return false
+	}
+
+	if err := VerifyPoW(g.Cfg, g.Key, challenge, nonce, token); err != nil {
+		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]any{
+			"status":  "error",
+			"message": "invalid proof of work",
+		})
+		return false
+	}
+
+	return true
+}
+
+/*
+────────────────────────────────────────────────────────────
+Verification
+────────────────────────────────────────────────────────────
+*/
 
 // VerifyPoW returns nil if accepted.
 func VerifyPoW(cfg PowConfig, key []byte, challenge, nonce, token string) error {
-
-	// PoW disabled or misconfigured → no-op
 	if !cfg.Enable || cfg.Difficulty == 0 || cfg.TTL <= 0 || len(key) == 0 {
 		return nil
 	}
@@ -127,7 +188,6 @@ func parseToken(key []byte, challenge, token string) (int64, error) {
 	}
 	exp := int64(binary.BigEndian.Uint64(expRaw))
 
-	// Recompute expected HMAC
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(challenge))
 	mac.Write(expRaw)
@@ -151,26 +211,20 @@ func checkDifficulty(challenge, nonce string, difficulty uint8) bool {
 	h.Write([]byte(nonce))
 	sum := h.Sum(nil)
 
-	var bitsChecked uint8
+	var bits uint8
 	for _, b := range sum {
 		for i := uint(7); i < 8; i-- {
-			if bitsChecked == difficulty {
+			if bits == difficulty {
 				return true
 			}
 			if (b>>i)&1 != 0 {
 				return false
 			}
-			bitsChecked++
-			if bitsChecked == difficulty {
+			bits++
+			if bits == difficulty {
 				return true
 			}
 		}
 	}
-	return bitsChecked >= difficulty
-}
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
+	return bits >= difficulty
 }

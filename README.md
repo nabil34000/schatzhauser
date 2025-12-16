@@ -1,8 +1,8 @@
 ## schatzhauser
 
-This is a Go backend to add users and storage to frontend via REST API.
+This is a Go backend to add users and storage to a web frontend.
 
-Slow down and enjoy Go.
+Slow down and enjoy Go's "net/http" with SQLite and sqlc.
 
 The following works already (some polishing will continue):
 
@@ -10,25 +10,18 @@ The following works already (some polishing will continue):
 
 - [x] username/passwd auth with session cookies,
 
-- [x] cli to manage users, no guis/tuis,
+- [x] cli to manage users: no guis/tuis/dashboards,
 
-- [x] tests are Go programs (real examples, no import "testing").
+- [x] tests are real examples in Go: no import "testing".
 
 Absolutely no paid 3rd party black boxes like auth or emails. VPS deployment with Caddy, just ask AI.
 
-Use the included guards ("middleware") to fight bots:
+Use the included guards (middleware) to fight bots: (i) maximal request rate per IP (fixed window, in memory) and (ii)
+maximal request body size (register, login). Go for [Proof of Work](docs/proof_of_work.md) if you want it bot-hostile.
 
-- [x] maximal request rate per IP (fixed window, in memory),
+./internal/handlers/register.go hardcodes [Maximal Account Number per IP](docs/accounts_per_ip.md) (persistent in SQLite).
 
-- [x] maximal account number per IP (persistent in SQLite),
-
-- [x] maximal request body size (register, login),
-
-- [x] proof of work if you want it extremely bot-unfriendly,
-
-Go stdlib for routing, SQLite, sqlc v2 with no SQL in the Go code.
-
-See docs for design decisions and explanation of the tricky bits.
+Delve into ./tests and docs for the tricky bits.
 
 ## Setup/Workflow
 

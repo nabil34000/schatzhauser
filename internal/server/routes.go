@@ -44,7 +44,7 @@ func RegisterRoutes(mux *http.ServeMux, db *sql.DB, cfg *config.Config) {
 	registerGuards := []protect.Guard{
 		registerIPR,
 		registerBody,
-		protect.NewPoWGuard(powCfg, powHandler.Key),
+		protect.NewPoWGuard(powCfg),
 	}
 
 	mux.Handle("/api/register", &handlers.RegisterHandler{
