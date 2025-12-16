@@ -1,5 +1,7 @@
 ## Proof of Work
 
+PoW is quite a complication, but at least it does not require a DB transaction as [Accounts per IP Limiter](docs/accounts_per_ip.md). PoW allows to impose secure computational burden on the client side. For a human wasting 1s of the client CPU when registering an account is not much. For a bot bombarding the API with millions of requests the computational resources will skyrocket.
+
 ### 0. Overview
 
 The PoW system protects /api/register from automated mass-account creation. When enabled, the server issues a short-lived challenge. The client must find a nonce whose SHA-256 hash meets a difficulty requirement (leading zero bits). Successful solutions permit registration.

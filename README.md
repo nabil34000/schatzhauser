@@ -24,7 +24,11 @@ Use the included guards ("middleware") to fight bots:
 
 - [x] proof of work if you want it extremely bot-unfriendly,
 
-Go stdlib for routing, SQLite, sqlc v2 with no SQL in the Go code. See [Architecture](docs/architecture.md) for more details and code organization. Around 3KLOC of Go atm (Dec 16, 2025).
+Go stdlib for routing, SQLite, sqlc v2 with no SQL in the Go code.
+
+See [Architecture](docs/architecture.md) for more details and code organization.
+
+Guards are tricky, see e.g. [Proof of Work](docs/proof_of_work.md) or [Accounts per IP Limiter](docs/accounts_per_ip.md).
 
 ## Setup/Workflow
 
@@ -138,10 +142,6 @@ SQLite supports multiple processes safely (file locking handles it), with one ca
 # bulk delete by creation date
 ./bin/god users delete --created-between 2025-12-02 2025-12-05
 ```
-
-## Proof of Work (PoW)
-
-PoW is quite a complication, but it allows to impose secure computational burden on the client side. For a human wasting 1s of the client CPU when registering an account is not much. For a bot bombarding the API with millions of requests the computational resources will skyrocket. See [Proof of Work](docs/proof_of_work.md) for details.
 
 ## Tests
 
