@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/schatzhauser-banner.png" alt="Schatzhauser" style="width: 80%; height: auto;" />
+  <img src="docs/schatzhauser-banner.png" alt="Schatzhauser" style="width: 90%; height: auto;" />
 </p>
 
 <p align="center">
@@ -23,38 +23,7 @@ maximal request body size (register, login). Go for [Proof of Work](docs/proof_o
 
 ./internal/handlers/register.go hardcodes [Maximal Account Number per IP](docs/accounts_per_ip.md) (persistent in SQLite).
 
-Delve into ./tests and docs for the tricky bits.
-
-## How Everything is Wired, Roughly
-
-```mermaid
-flowchart TD
-    CFG[./config.toml]
-    MAIN[./cmd/main.go]
-    CONF[./internal/config/config.go]
-    ROUTES[./internal/server/routes.go]
-
-    CFG --> MAIN --> CONF --> ROUTES
-
-    subgraph HTTP["HTTP Layer"]
-        GUARDS[./internal/guards]
-        HANDLERS[./internal/handlers]
-        GUARDS --> HANDLERS
-    end
-
-    ROUTES --> GUARDS
-    ROUTES --> HANDLERS
-
-    subgraph DB["Database & Codegen"]
-        DBBOX["./db/migrations<br/>./db/migrations.go<br/>./db/store.go<br/>./db/queries.go"]
-        SQLC[sqlc generate]
-        DBBOX --> SQLC
-    end
-
-    SQLC --> HANDLERS
-```
-
-See [Architecture](docs/architecture.md) for more details.
+Delve into ./tests and docs for the tricky bits. See [Architecture](docs/architecture.md) for more details.
 
 ## Setup/Workflow
 

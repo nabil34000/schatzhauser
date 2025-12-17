@@ -20,6 +20,37 @@ If two users register at the same time: two goroutines, two transactions, two co
 
 ### Code Organization
 
+A rough overview:
+
+```mermaid
+flowchart TD
+    CFG[./config.toml]
+    MAIN[./cmd/main.go]
+    CONF[./internal/config/config.go]
+    ROUTES[./internal/server/routes.go]
+
+    CFG --> MAIN --> CONF --> ROUTES
+
+    subgraph HTTP["HTTP Layer"]
+        GUARDS[./internal/guards]
+        HANDLERS[./internal/handlers]
+        GUARDS --> HANDLERS
+    end
+
+    ROUTES --> GUARDS
+    ROUTES --> HANDLERS
+
+    subgraph DB["Database & Codegen"]
+        DBBOX["./db/migrations<br/>./db/migrations.go<br/>./db/store.go<br/>./db/queries.go"]
+        SQLC[sqlc generate]
+        DBBOX --> SQLC
+    end
+
+    SQLC --> HANDLERS
+```
+
+More details:
+
 - ./cmd - entrance points to `server` and `god` (independent user management cli).
 
 - ./data/data.db - SQlite DB. Populate it via REST API or ./bin/god. Tests will directly pollute it, use ./bin/god to clean up.
