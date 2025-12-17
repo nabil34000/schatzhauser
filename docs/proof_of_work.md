@@ -1,6 +1,6 @@
 ## Proof of Work
 
-PoW is quite a complication, but at least it does not require a DB transaction as [Accounts per IP Limiter](docs/accounts_per_ip.md). PoW allows to impose secure computational burden on the client side. For a human wasting 1s of the client CPU when registering an account is not much. For a bot bombarding the API with millions of requests the computational resources will skyrocket.
+PoW is a complication, but at least it does not require a DB transaction as [Accounts per IP Limiter](accounts_per_ip.md). PoW allows to impose secure computational burden on the client side. For a human wasting 1s of the client CPU when registering an account is not much. For a bot bombarding the API with millions of requests the computational resources will skyrocket.
 
 ### 0. Overview
 
@@ -150,6 +150,8 @@ curl -i -X POST \
 ```
 
 Why headers instead of bodies in PoW: "Headers keep the PoW metadata separate from the JSON body, which keeps the register payload clean, avoids mixing transport-level proof with application data, lets the server check PoW before reading or parsing the body (protecting body-size limits and parsers), and makes PoW uniformly attachable to any route without changing its JSON schema."
+
+PoW is headers-only early return, no fallbacks to json body, no need to read it.
 
 ### 5. Proof-of-Work Parameters
 

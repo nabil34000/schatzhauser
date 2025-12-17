@@ -1,12 +1,23 @@
 ## Maximal Account Number per IP
 
-Limiting the request rate per IP slows down a fast attacker, but what if an adversary slowly and periodically creates spam accounts? We can solve this problem by limiting the maximal number of accounts per IP.
+Guards on request rates slow down fast attacks, but what if an adversary slowly and periodically creates spam accounts? Limiting the maximal number of accounts per IP (MANI) aims to solve this, it is included inside
 
-One annoying consequence is that Account-per-IP is not "middleware", it belongs to the same db transaction whose life cycle is owned by a handler. The problem is not that a guard touches DB per se. Guards would now need request-scoped dependencies that do not exist at route assembly time.
+./internal/handlers/register.go
 
-A few other examples that mix business domain (handler logic) with early guarding is blacklisting IPs or checking if some seat numbers are exceeded in a ticket issuing system.
+and can be enabled in ./config.toml:
 
-There is a way to extend these guards with an extra argument. Inside ./internal/guards/guard.go:
+```toml
+# Max accounts per IP
+[account_per_ip_limiter]
+enable = true
+max_accounts = 7
+```
+
+Code organization and a few edge cases are addressed below.
+
+### MANI is Not Middleware
+
+The problem is that MANI needs access to DB, but the transaction's life cycle is owned by the request handler. To treat MANI as a regular middleware, one would need to extend the Guard interface and drag the whole environment with it:
 
 ```go
 type Env struct {
@@ -21,7 +32,7 @@ type Guard interface {
 }
 ```
 
-and then a handler code would be
+The handler code would then be
 
 ```go
 func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -57,13 +68,9 @@ func (h *RegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 ```
 
-This is still messy and it pollutes middleware with Env. We do not immediately see which guard demands a DB transaction. There is a way to further split guards, consider policy pipelines and all that. Better not to overabstract this.
+This is called _policy pipeline_, but it is discarded in this code, let us keep it simple. Any guard/middleware is transaction-free, and anything else will be inside handler's business logic.
 
-Any guard/middleware is transaction-free, and anything else will be inside handler's business logic, see ./internal/handlers/register.go for the imposition of the maximal account number per IP.
-
-However complex, this is just code organization, now onto the real problems.
-
-### Modification No. 1
+### Counting Users (Accounts) per IP
 
 Counting users per ip directly turns out to be not a good idea:
 
@@ -73,7 +80,7 @@ SELECT COUNT(*) FROM users
 WHERE ip = ?;
 ```
 
-The SQL code above will also count deleted users (unless hard-deleted). A user may have old forgotten accounts, which should not prevent new account creation. The main worry is only consistent spamming to over flood DB.
+The SQL code above will also count deleted users (unless hard-deleted). A user may have old forgotten accounts, which should not prevent new account creation. Small amounts of spam are tolerable, we worry only about consistent spammers who aim to overflow the system.
 
 The solution is to count per time window, not per life-time.
 
@@ -83,11 +90,11 @@ WHERE ip = ?
 AND created_at >= datetime('now', '-30 days');
 ```
 
-The actual limit is on the account number per IP per 30 days. max_accounts = 7 inside config.toml implies 7 allowed accounts created per 30 days. An evil user can spam the system with the rate of 6 accounts per 30 days, which is manageable.
+The actual limit is on the account number per IP per 30 days. Let max_accounts = 7 inside config.toml, which implies 7 allowed accounts created per 30 days. An evil user can spam the system with the rate of 6 accounts per 30 days, which is manageable.
 
-### Modification No. 2
+### Race Condition
 
-There is an edge case with the race condition. Two /register requests from the same IP arrive at nearly the same time.
+There is an edge case to tackle. Let two api/register requests from the same IP arrive at nearly the same time.
 
 Both do:
 

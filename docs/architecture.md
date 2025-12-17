@@ -1,12 +1,10 @@
 ## Architecture
 
-TD: remove academisms/fluff.
-
 - ./cmd - entrance points to `server` and `god` (independent user management cli).
 
-- ./data/data.db - SQlite db, single file, should be easier to vps and backup.
+- ./data/data.db - SQlite DB. Populate it via REST API or ./bin/god. Tests will directly pollute it, use ./bin/god to clean up.
 
-- ./db - mostly sqlc generated, except store.go and migrations.go, ask AI.
+- ./db - mostly sqlc generated, except store.go and migrations.go.
 
 - ./internal
 
@@ -20,11 +18,11 @@ TD: remove academisms/fluff.
 
   - httpx - x for extras, json/http helpers used by both: handlers and guards.
 
-  - guards - middleware: (i) guards which are easily called by any handler in any sequence, and (ii) domain-level guards such as max account per ip limiter which is not so easy to abstract and chain due to db transactions.
+  - guards - middleware, mostly to fight bots. Guards do not touch DB.
 
-  - server/routes.go - this is where all the parameters come from main.go and config/config.go and middleware is assembled, and then passed to each handler.
+  - server/routes.go - this is where all the middleware and handlers are assembled.
 
-  - config.toml - all the parameters whose default values are in config/config.go via config structs duplicating the main ones (simple Go, no builders, no Rob Pike's option structs).
+  - config.toml - user defined parameters with defaults inside config.go.
 
 These rules eliminate 80 percent of the mess:
 
@@ -36,11 +34,9 @@ These rules eliminate 80 percent of the mess:
 
 - A guard checks if everything is alright and returns true, or writes an HTTP response and returns false. There is no nil, error handling, panic, and exit maze.
 
-- PoW is headers-only early return, no fallbacks to json body, no need to read it.
-
 ## More about Middleware (Guards)
 
-This is the code which runs inside a handler before business logic. It is **stateless, synchronous, and in-memory**. To chain/execute them in sequence we put them under a common type `guards.Guard`:
+This is ./internal/guards code which runs inside a handler before business logic. It is **synchronous, and in-memory**. To chain/execute the guards in sequence we put them under a common type `guards.Guard`:
 
 ```go
 type Guard interface {
@@ -48,9 +44,9 @@ type Guard interface {
 }
 ```
 
-This lives inside ./internal/guards to break a cycle between ./internal/server/routes.go and ./internal/handlers.
+The package guards breaks a cycle between ./internal/server/routes.go and ./internal/handlers.
 
-The rest is just Go code. Inside a handler an active guard will emit an HTTP response and return false. The handler exits before business logic via return:
+Inside a handler an active guard will emit an HTTP response and return false. The handler exits before business logic via return:
 
 ```go
 for _, g := range h.Guards {
